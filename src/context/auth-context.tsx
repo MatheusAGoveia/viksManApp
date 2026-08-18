@@ -1,5 +1,6 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
@@ -34,6 +35,13 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function emailRedirectUrl() {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return `${window.location.origin}/account`;
+  }
+  return 'viksman://account';
+}
 
 function mapProfile(row: Record<string, unknown>): ClientProfile {
   return {
@@ -90,7 +98,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { data: { full_name: fullName.trim() } },
+      options: {
+        data: { full_name: fullName.trim() },
+        emailRedirectTo: emailRedirectUrl(),
+      },
     });
     if (error) return { error: error.message };
     return data.session ? {} : { message: 'Confira seu e-mail para confirmar o cadastro.' };
@@ -99,7 +110,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   async function resetPassword(email: string): Promise<AuthResult> {
     if (!supabase) return { error: 'Backend ainda não configurado.' };
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: 'viksman://account',
+      redirectTo: emailRedirectUrl(),
     });
     return error ? { error: error.message } : { message: 'Enviamos as instruções para seu e-mail.' };
   }
