@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
+import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { colors, fonts, layout } from '@/constants/theme';
 import { AuthProvider } from '@/context/auth-context';
 import { BookingProvider } from '@/context/booking-context';
@@ -76,6 +77,7 @@ export default function RootLayout() {
         <Tabs.Screen name="login" options={{ href: null, tabBarStyle: { display: 'none' } }} />
         <Tabs.Screen name="admin" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       </Tabs>
+      <AnimatedSplashOverlay />
       </BookingProvider>
     </AuthProvider>
   );

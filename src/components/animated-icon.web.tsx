@@ -1,108 +1,75 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View } from 'react-native';
-import Animated, { Keyframe, Easing } from 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { Animated, StyleSheet } from 'react-native';
 
-import classes from './animated-icon.module.css';
-const DURATION = 300;
+const HOLD_DURATION = 700;
+const FADE_DURATION = 320;
 
 export function AnimatedSplashOverlay() {
-  return null;
-}
+  const [visible, setVisible] = useState(true);
+  const [opacity] = useState(() => new Animated.Value(1));
+  const [scale] = useState(() => new Animated.Value(0.96));
 
-const keyframe = new Keyframe({
-  0: {
-    transform: [{ scale: 0 }],
-  },
-  60: {
-    transform: [{ scale: 1.2 }],
-    easing: Easing.elastic(1.2),
-  },
-  100: {
-    transform: [{ scale: 1 }],
-    easing: Easing.elastic(1.2),
-  },
-});
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: FADE_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 1.02,
+          duration: FADE_DURATION,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) setVisible(false);
+      });
+    }, HOLD_DURATION);
 
-const logoKeyframe = new Keyframe({
-  0: {
-    opacity: 0,
-  },
-  60: {
-    transform: [{ scale: 1.2 }],
-    opacity: 0,
-    easing: Easing.elastic(1.2),
-  },
-  100: {
-    transform: [{ scale: 1 }],
-    opacity: 1,
-    easing: Easing.elastic(1.2),
-  },
-});
+    return () => {
+      clearTimeout(timer);
+      opacity.stopAnimation();
+      scale.stopAnimation();
+    };
+  }, [opacity, scale]);
 
-const glowKeyframe = new Keyframe({
-  0: {
-    transform: [{ rotateZ: '-180deg' }, { scale: 0.8 }],
-    opacity: 0,
-  },
-  [DURATION / 1000]: {
-    transform: [{ rotateZ: '0deg' }, { scale: 1 }],
-    opacity: 1,
-    easing: Easing.elastic(0.7),
-  },
-  100: {
-    transform: [{ rotateZ: '7200deg' }],
-  },
-});
+  if (!visible) return null;
 
-export function AnimatedIcon() {
   return (
-    <View style={styles.iconContainer}>
-      <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
-        <Image style={styles.glow} source={require('@/assets/images/logo-glow.png')} />
+    <Animated.View
+      accessibilityLabel="Viks Man"
+      style={[styles.splashOverlay, { opacity }]}
+    >
+      <Animated.View style={[styles.logoWrap, { transform: [{ scale }] }]}>
+        <Image
+          accessibilityLabel="Logo da Viks Man"
+          contentFit="contain"
+          source={require('@/assets/images/viks-mark.png')}
+          style={styles.logo}
+        />
       </Animated.View>
-
-      <Animated.View style={styles.background} entering={keyframe.duration(DURATION)}>
-        <div className={classes.expoLogoBackground} />
-      </Animated.View>
-
-      <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
-      </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  splashOverlay: {
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    zIndex: 10000,
+  },
+  logoWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: 360,
+    width: '58%',
+  },
+  logo: {
+    aspectRatio: 1665 / 943,
     width: '100%',
-    zIndex: 1000,
-    position: 'absolute',
-    top: 128 / 2 + 138,
-  },
-  imageContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  glow: {
-    width: 201,
-    height: 201,
-    position: 'absolute',
-  },
-  iconContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 128,
-    height: 128,
-  },
-  image: {
-    position: 'absolute',
-    width: 76,
-    height: 71,
-  },
-  background: {
-    width: 128,
-    height: 128,
-    position: 'absolute',
   },
 });

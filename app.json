@@ -8,7 +8,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "viksman",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#101114",
+    "backgroundColor": "#000000",
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.viksman.app",
@@ -35,11 +35,11 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#101114",
+          "backgroundColor": "#000000",
           "image": "./assets/images/viks-mark.png",
           "imageWidth": 180,
           "dark": {
-            "backgroundColor": "#101114",
+            "backgroundColor": "#000000",
             "image": "./assets/images/viks-mark.png"
           }
         }
