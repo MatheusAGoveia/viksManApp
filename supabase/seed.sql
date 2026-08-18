@@ -1,0 +1,2 @@
+-- Dados de unidade, serviços, profissionais e jornadas já são inseridos pela primeira migration.
+-- Use este arquivo apenas para dados locais descartáveis, nunca para credenciais ou clientes reais.

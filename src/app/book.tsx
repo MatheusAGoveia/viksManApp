@@ -1,0 +1,429 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { BrandLockup } from '@/components/brand-ui';
+import { colors, fonts, layout } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
+import { useBookings } from '@/context/booking-context';
+import { barbers, formatBookingDate, formatCurrency, makeDateOptions, services, timeSlots } from '@/data/catalog';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
+
+function paramValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+const PIX_KEY = 'matheusaagd2@gmail.com';
+const partyOptions = [1, 2, 3, 4, 5, 6];
+const tipOptions = [0, 5, 10, 15];
+
+export default function BookingScreen() {
+  const params = useLocalSearchParams<{ service?: string; barber?: string }>();
+  const { width } = useResponsiveLayout();
+  const { user } = useAuth();
+  const { addBooking } = useBookings();
+  const dates = useMemo(() => makeDateOptions(), []);
+  const isWide = width >= 760;
+  const [date, setDate] = useState<string>();
+  const [time, setTime] = useState<string>();
+  const [confirmed, setConfirmed] = useState(false);
+  const [availableTimes, setAvailableTimes] = useState(timeSlots);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string>();
+  const [submitting, setSubmitting] = useState(false);
+  const [partySize, setPartySize] = useState(1);
+  const [tipPercent, setTipPercent] = useState(0);
+  const [pixCopied, setPixCopied] = useState(false);
+
+  const incomingService = paramValue(params.service);
+  const incomingBarber = paramValue(params.barber);
+  const serviceId = services.some((item) => item.id === incomingService) ? incomingService : undefined;
+  const barberId = barbers.some((item) => item.id === incomingBarber) ? incomingBarber : undefined;
+
+  const selectedService = services.find((service) => service.id === serviceId);
+  const selectedBarber = barbers.find((barber) => barber.id === barberId);
+  const canConfirm = Boolean(serviceId && barberId && date && time && !submitting);
+  const subtotal = (selectedService?.price ?? 0) * partySize;
+  const gratuity = Math.round(subtotal * tipPercent) / 100;
+  const total = subtotal + gratuity;
+
+  useEffect(() => {
+    async function loadSlots() {
+      if (!supabase || !serviceId || !barberId || !date) {
+        setAvailableTimes(timeSlots);
+        return;
+      }
+      setSlotsLoading(true);
+      const { data, error } = await supabase.rpc('get_available_slots', {
+        p_unit_slug: 'betim',
+        p_service_slug: serviceId,
+        p_day: date,
+        p_barber_slug: barberId,
+        p_party_size: partySize,
+      });
+      if (!error) {
+        const times: string[] = (data ?? []).map((slot: Record<string, unknown>) => new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+        }).format(new Date(String(slot.starts_at))));
+        setAvailableTimes(Array.from(new Set(times)));
+      }
+      setSlotsLoading(false);
+    }
+    loadSlots();
+  }, [barberId, date, partySize, serviceId]);
+
+  function select(setter: (value: string) => void, value: string) {
+    setter(value);
+    Haptics.selectionAsync().catch(() => undefined);
+  }
+
+  async function confirm() {
+    if (!serviceId || !barberId || !date || !time) return;
+    if (isSupabaseConfigured && !user) {
+      router.push({ pathname: '/login', params: { returnTo: '/book' } });
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(undefined);
+    try {
+      await addBooking({ serviceId, barberId, date, time, partySize, gratuityCents: Math.round(gratuity * 100), unitPriceCents: selectedService?.price ? selectedService.price * 100 : 0, paymentStatus: 'pending', pixKey: PIX_KEY });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      setConfirmed(true);
+    } catch (error) {
+      const message = String(error);
+      setSubmitError(message.includes('SLOT_UNAVAILABLE') ? 'Este horário acabou de ser ocupado. Escolha outro encaixe.' : 'Não foi possível confirmar. Tente novamente.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function finish(destination: '/' | '/appointments') {
+    setConfirmed(false);
+    setDate(undefined);
+    setTime(undefined);
+    setPartySize(1);
+    setTipPercent(0);
+    setPixCopied(false);
+    router.replace(destination);
+  }
+
+  if (confirmed && selectedService && selectedBarber && date && time) {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.centeredContent}>
+        <SafeAreaView style={styles.successWrap}>
+          <View style={styles.successMark}><Ionicons name="checkmark" color={colors.white} size={42} /></View>
+          <Text style={styles.successEyebrow}>HORÁRIO CONFIRMADO</Text>
+          <Text style={styles.successTitle}>Cadeira{`\n`}reservada.</Text>
+          <Text style={styles.successText}>{isSupabaseConfigured ? 'Seu horário foi sincronizado com a barbearia e com a sua conta.' : 'Seu horário já aparece na agenda deste dispositivo.'}</Text>
+          <View style={styles.successCard}>
+            <Text style={styles.summaryLabel}>SEU AGENDAMENTO</Text>
+            <Text style={styles.summaryDate}>{formatBookingDate(date)}</Text>
+            <Text style={styles.summaryTime}>{time}</Text>
+            <View style={styles.summaryLine}><Text style={styles.summaryKey}>SERVIÇO</Text><Text style={styles.summaryValue}>{selectedService.name}</Text></View>
+            <View style={styles.summaryLine}><Text style={styles.summaryKey}>PROFISSIONAL</Text><Text style={styles.summaryValue}>{selectedBarber.name}</Text></View>
+            <View style={styles.summaryLine}><Text style={styles.summaryKey}>GRUPO</Text><Text style={styles.summaryValue}>{partySize} {partySize === 1 ? 'pessoa' : 'pessoas'}</Text></View>
+            {gratuity > 0 ? <View style={styles.summaryLine}><Text style={styles.summaryKey}>GORJETA</Text><Text style={styles.summaryValue}>{formatCurrency(gratuity)}</Text></View> : null}
+            <View style={styles.summaryLine}><Text style={styles.summaryKey}>TOTAL</Text><Text style={styles.summaryValue}>{formatCurrency(total)}</Text></View>
+            {partySize > 1 ? <View style={styles.summaryLine}><Text style={styles.summaryKey}>DIVISÃO SUGERIDA</Text><Text style={styles.summaryValue}>{formatCurrency(total / partySize)} por pessoa</Text></View> : null}
+          </View>
+          <View style={styles.pixCard}>
+            <View style={styles.pixIcon}><Ionicons name="qr-code-outline" color={colors.blue} size={22} /></View>
+            <View style={styles.pixCopy}><Text style={styles.pixLabel}>PAGAMENTO VIA PIX</Text><Text selectable style={styles.pixKey}>{PIX_KEY}</Text><Text style={styles.pixHint}>O pagamento é confirmado manualmente pela recepção.</Text></View>
+            <Pressable accessibilityLabel="Copiar chave PIX" onPress={async () => { await Clipboard.setStringAsync(PIX_KEY); setPixCopied(true); }} style={styles.copyButton}><Ionicons name={pixCopied ? 'checkmark' : 'copy-outline'} color={colors.ink} size={18} /><Text style={styles.copyText}>{pixCopied ? 'COPIADO' : 'COPIAR'}</Text></Pressable>
+          </View>
+          <Pressable onPress={() => finish('/appointments')} style={({ pressed }) => [styles.primary, pressed && styles.pressed]}>
+            <Text style={styles.primaryText}>VER MEUS HORÁRIOS</Text><Ionicons name="arrow-forward" color={colors.white} size={18} />
+          </Pressable>
+          <Pressable onPress={() => finish('/')} style={styles.secondary}><Text style={styles.secondaryText}>VOLTAR AO INÍCIO</Text></Pressable>
+        </SafeAreaView>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.centeredContent} keyboardShouldPersistTaps="handled">
+      <SafeAreaView edges={['top']} style={[styles.page, !isWide && canConfirm && styles.pageWithDock]}>
+        <View style={styles.header}>
+          <View style={styles.bookingTopbar}>
+            <BrandLockup inverse />
+            <Text style={styles.unitLabel}>UNIDADE BETIM</Text>
+          </View>
+          <Text style={styles.eyebrow}>AGENDAMENTO</Text>
+          <Text style={[styles.title, isWide && styles.titleWide]}>Escolha.{`\n`}Confirme. <Text style={styles.titleAccent}>Pronto.</Text></Text>
+          <Text style={styles.subtitle}>Disponibilidade real, inclusive para grupos de até seis pessoas.</Text>
+        </View>
+
+        <View style={styles.progress}>
+          {[Boolean(serviceId), partySize > 0, Boolean(barberId), Boolean(date), Boolean(time)].map((done, index) => (
+            <View key={index} style={[styles.progressBar, done && styles.progressDone]} />
+          ))}
+        </View>
+
+        <View style={[styles.bookingLayout, isWide && styles.bookingLayoutWide]}>
+        <View style={styles.choicesColumn}>
+        <View style={[styles.section, isWide && styles.sectionWide]}>
+          <View style={styles.sectionHeading}><Text style={styles.step}>01</Text><Text style={styles.sectionTitle}>O que vamos fazer?</Text></View>
+          <View style={[styles.serviceList, isWide && styles.serviceListWide]}>
+            {services.map((service) => {
+              const selected = service.id === serviceId;
+              return (
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  key={service.id}
+                  onPress={() => { setTime(undefined); select((value) => router.setParams({ service: value }), service.id); }}
+                  style={({ pressed }) => [styles.serviceCard, selected && styles.selectedCard, pressed && styles.pressed]}>
+                  <View style={styles.choiceTop}>
+                    <Text style={[styles.choiceName, selected && styles.selectedText]}>{service.name}</Text>
+                    <View style={[styles.radio, selected && styles.radioSelected]}>{selected ? <View style={styles.radioDot} /> : null}</View>
+                  </View>
+                  <Text style={[styles.choiceDescription, selected && styles.selectedMuted]}>{service.description}</Text>
+                  <View style={styles.choiceMeta}>
+                    <Text style={[styles.choicePrice, selected && styles.selectedText]}>{formatCurrency(service.price)}</Text>
+                    <Text style={[styles.choiceDuration, selected && styles.selectedMuted]}>{service.duration} MIN</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.section, isWide && styles.sectionWide]}>
+          <View style={styles.sectionHeading}><Text style={styles.step}>02</Text><Text style={styles.sectionTitle}>Para quantas pessoas?</Text></View>
+          <Text style={styles.sectionHint}>O grupo usa a mesma cadeira em horários consecutivos.</Text>
+          <View style={styles.partyGrid}>{partyOptions.map((size) => <Pressable key={size} accessibilityRole="radio" accessibilityState={{ selected: partySize === size }} onPress={() => { setTime(undefined); setPartySize(size); }} style={[styles.partyChip, partySize === size && styles.partyChipActive]}><Text style={[styles.partyNumber, partySize === size && styles.selectedText]}>{size}</Text><Text style={[styles.partyLabel, partySize === size && styles.selectedMuted]}>{size === 1 ? 'PESSOA' : 'PESSOAS'}</Text></Pressable>)}</View>
+        </View>
+
+        <View style={[styles.section, isWide && styles.sectionWide]}>
+          <View style={styles.sectionHeading}><Text style={styles.step}>03</Text><Text style={styles.sectionTitle}>Com quem?</Text></View>
+          <View style={styles.barberList}>
+            {barbers.map((barber) => {
+              const selected = barber.id === barberId;
+              return (
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  key={barber.id}
+                  onPress={() => { setTime(undefined); select((value) => router.setParams({ barber: value }), barber.id); }}
+                  style={({ pressed }) => [styles.barberCard, selected && styles.selectedBarber, pressed && styles.pressed]}>
+                  <View style={[styles.barberAvatar, selected && styles.selectedAvatar]}><Text style={[styles.barberInitials, selected && styles.selectedText]}>{barber.initials}</Text></View>
+                  <View style={styles.barberCopy}>
+                    <Text style={styles.barberChair}>{barber.chair}</Text>
+                    <Text style={styles.barberName}>{barber.name}</Text>
+                    <Text style={styles.barberSpecialties}>{barber.specialties}</Text>
+                  </View>
+                  <View style={styles.barberAvailability}>
+                    <Text style={styles.availableLabel}>PRÓXIMO</Text>
+                    <Text style={styles.availableText}>{barber.nextAvailable}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.section, isWide && styles.sectionWide]}>
+          <View style={styles.sectionHeading}><Text style={styles.step}>04</Text><Text style={styles.sectionTitle}>Qual dia?</Text></View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateList}>
+            {dates.map((option) => {
+              const selected = option.iso === date;
+              return (
+                <Pressable key={option.iso} onPress={() => { setTime(undefined); select(setDate, option.iso); }} style={[styles.dateCard, selected && styles.dateSelected]}>
+                  <Text style={[styles.dateWeekday, selected && styles.selectedText]}>{option.weekday.toUpperCase()}</Text>
+                  <Text style={[styles.dateValue, selected && styles.selectedText]}>{option.date}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        <View style={[styles.section, isWide && styles.sectionWide]}>
+          <View style={styles.sectionHeading}><Text style={styles.step}>05</Text><Text style={styles.sectionTitle}>Qual horário?</Text></View>
+          <View style={styles.timeGrid}>
+            {slotsLoading ? <ActivityIndicator color={colors.blue} style={styles.slotsLoading} /> : null}
+            {!slotsLoading && availableTimes.length === 0 ? <Text style={styles.noSlots}>Nenhum encaixe disponível neste dia.</Text> : null}
+            {!slotsLoading && availableTimes.map((slot) => {
+              const selected = slot === time;
+              return (
+                <Pressable key={slot} onPress={() => select(setTime, slot)} style={[styles.timeChip, selected && styles.timeSelected]}>
+                  <Text style={[styles.timeText, selected && styles.selectedText]}>{slot}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.section, isWide && styles.sectionWide]}>
+          <View style={styles.sectionHeading}><Text style={styles.step}>06</Text><Text style={styles.sectionTitle}>Quer deixar gorjeta?</Text></View>
+          <Text style={styles.sectionHint}>Opcional. O valor entra no total e na divisão do grupo.</Text>
+          <View style={styles.tipGrid}>{tipOptions.map((percent) => <Pressable key={percent} accessibilityRole="radio" accessibilityState={{ selected: tipPercent === percent }} onPress={() => setTipPercent(percent)} style={[styles.tipChip, tipPercent === percent && styles.tipChipActive]}><Text style={[styles.tipChipText, tipPercent === percent && styles.selectedText]}>{percent === 0 ? 'SEM GORJETA' : `${percent}%`}</Text></Pressable>)}</View>
+        </View>
+
+        </View>
+        <View style={[styles.checkout, isWide && styles.checkoutWide]}>
+          <View style={styles.checkoutCopy}>
+            <Text style={styles.checkoutLabel}>{canConfirm ? 'TUDO CERTO' : 'FALTA POUCO'}</Text>
+            <Text style={styles.checkoutTitle}>{selectedService?.name ?? 'Escolha seu serviço'}</Text>
+            {selectedService ? <Text style={styles.checkoutMeta}>{selectedService.duration * partySize} min de serviço · {partySize} {partySize === 1 ? 'pessoa' : 'pessoas'}</Text> : null}
+            {submitError ? <Text style={styles.checkoutError}>{submitError}</Text> : null}
+            {isWide ? <View style={styles.checkoutDetails}>
+              <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>PROFISSIONAL</Text><Text style={styles.checkoutValue}>{selectedBarber?.name ?? '—'}</Text></View>
+              <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>DATA</Text><Text style={styles.checkoutValue}>{date ? formatBookingDate(date) : '—'}</Text></View>
+              <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>HORÁRIO</Text><Text style={styles.checkoutValue}>{time ?? '—'}</Text></View>
+              <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>TOTAL</Text><Text style={styles.checkoutValue}>{selectedService ? formatCurrency(total) : '—'}</Text></View>
+              {partySize > 1 ? <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>POR PESSOA</Text><Text style={styles.checkoutValue}>{formatCurrency(total / partySize)}</Text></View> : null}
+            </View> : null}
+          </View>
+          <Pressable disabled={!canConfirm} onPress={confirm} style={({ pressed }) => [styles.confirmButton, isWide && styles.confirmButtonWide, !canConfirm && styles.confirmDisabled, pressed && canConfirm && styles.pressed]}>
+            {submitting ? <ActivityIndicator color={colors.white} /> : <><Text style={styles.confirmText}>CONFIRMAR</Text><Ionicons name="arrow-forward" color={colors.white} size={18} /></>}
+          </Pressable>
+        </View>
+        </View>
+      </SafeAreaView>
+    </ScrollView>
+    {!isWide && canConfirm ? (
+      <View style={styles.mobileDock}>
+        <View style={styles.mobileDockCopy}>
+          <Text style={styles.mobileDockLabel}>SEU HORÁRIO</Text>
+          <Text style={styles.mobileDockValue}>{time} · {formatCurrency(total)}</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Confirmar ${selectedService?.name} às ${time}`}
+          disabled={submitting}
+          onPress={confirm}
+          style={({ pressed }) => [styles.mobileDockButton, pressed && styles.pressed]}>
+          {submitting ? <ActivityIndicator color={colors.white} /> : <><Text style={styles.mobileDockButtonText}>CONFIRMAR</Text><Ionicons name="arrow-forward" color={colors.white} size={18} /></>}
+        </Pressable>
+      </View>
+    ) : null}
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.paper },
+  centeredContent: { alignItems: 'center' },
+  page: { width: '100%', maxWidth: layout.maxWidth, paddingBottom: 36 },
+  pageWithDock: { paddingBottom: 128 },
+  header: { backgroundColor: colors.ink, paddingHorizontal: layout.pagePadding, paddingTop: 18, paddingBottom: 52 },
+  bookingTopbar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
+  unitLabel: { color: '#7F8086', fontFamily: fonts.mono, fontSize: 7, fontWeight: '800', letterSpacing: 1 },
+  eyebrow: { color: colors.blue, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800', letterSpacing: 1.7, marginBottom: 18 },
+  title: { color: colors.white, fontFamily: fonts.sans, fontSize: 48, lineHeight: 46, letterSpacing: -3, fontWeight: '800' },
+  titleWide: { fontSize: 62, lineHeight: 58, letterSpacing: -3.8 },
+  titleAccent: { color: colors.blue, fontFamily: fonts.serif, fontStyle: 'italic', fontWeight: '400' },
+  subtitle: { color: '#A6A7AC', fontFamily: fonts.sans, fontSize: 14, marginTop: 18 },
+  progress: { flexDirection: 'row', gap: 5, paddingHorizontal: layout.pagePadding, paddingTop: 20 },
+  progressBar: { flex: 1, height: 4, backgroundColor: colors.line },
+  progressDone: { backgroundColor: colors.blue },
+  bookingLayout: { width: '100%' },
+  bookingLayoutWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 28, paddingHorizontal: 32 },
+  choicesColumn: { flex: 1, minWidth: 0 },
+  section: { paddingHorizontal: layout.pagePadding, paddingTop: 54 },
+  sectionWide: { paddingHorizontal: 0 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'baseline', gap: 13, marginBottom: 22 },
+  step: { color: colors.blue, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800' },
+  sectionTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 27, fontWeight: '800', letterSpacing: -1.2 },
+  sectionHint: { color: colors.muted, fontFamily: fonts.sans, fontSize: 11, lineHeight: 17, marginTop: -12, marginBottom: 17 },
+  serviceList: { gap: 10 },
+  serviceListWide: { flexDirection: 'row', flexWrap: 'wrap' },
+  serviceCard: { minHeight: 156, flexGrow: 1, flexBasis: 330, padding: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  selectedCard: { backgroundColor: colors.ink, borderColor: colors.ink },
+  choiceTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  choiceName: { color: colors.ink, fontFamily: fonts.sans, fontSize: 20, fontWeight: '800', letterSpacing: -0.7 },
+  choiceDescription: { color: colors.muted, fontFamily: fonts.sans, fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 270, flex: 1 },
+  choiceMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 15 },
+  choicePrice: { color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: '800' },
+  choiceDuration: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, letterSpacing: 0.8 },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  radioSelected: { borderColor: colors.blue },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.blue },
+  selectedText: { color: colors.white },
+  selectedMuted: { color: '#A9AAB0' },
+  partyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  partyChip: { minWidth: 94, minHeight: 68, paddingHorizontal: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  partyChipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  partyNumber: { color: colors.ink, fontFamily: fonts.sans, fontSize: 22, fontWeight: '900' },
+  partyLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 7, fontWeight: '800', letterSpacing: 0.7, marginTop: 3 },
+  barberList: { gap: 9 },
+  barberCard: { minHeight: 106, flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, gap: 13 },
+  selectedBarber: { borderColor: colors.blue, borderWidth: 2, padding: 13 },
+  barberAvatar: { width: 62, height: 76, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  selectedAvatar: { backgroundColor: colors.blue },
+  barberInitials: { color: colors.white, fontFamily: fonts.sans, fontSize: 26, fontWeight: '900', letterSpacing: -1.5 },
+  barberCopy: { flex: 1 },
+  barberChair: { color: colors.blue, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 1 },
+  barberName: { color: colors.ink, fontFamily: fonts.sans, fontSize: 19, fontWeight: '800', letterSpacing: -0.5, marginTop: 5 },
+  barberSpecialties: { color: colors.muted, fontFamily: fonts.sans, fontSize: 10, marginTop: 4 },
+  barberAvailability: { alignItems: 'flex-end', maxWidth: 82 },
+  availableLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 7, letterSpacing: 0.7 },
+  availableText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 10, lineHeight: 14, fontWeight: '700', textAlign: 'right', marginTop: 4 },
+  dateList: { gap: 9, paddingRight: layout.pagePadding },
+  dateCard: { width: 88, minHeight: 84, padding: 13, justifyContent: 'space-between', backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  dateSelected: { backgroundColor: colors.blue, borderColor: colors.blue },
+  dateWeekday: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 0.8 },
+  dateValue: { color: colors.ink, fontFamily: fonts.sans, fontSize: 16, fontWeight: '800', textTransform: 'lowercase' },
+  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  timeChip: { minWidth: 84, height: 48, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  timeSelected: { backgroundColor: colors.blue, borderColor: colors.blue },
+  timeText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 14, fontWeight: '800' },
+  slotsLoading: { width: '100%', paddingVertical: 18 },
+  noSlots: { width: '100%', color: colors.muted, fontFamily: fonts.sans, fontSize: 12, lineHeight: 18, paddingVertical: 18 },
+  tipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tipChip: { minWidth: 100, height: 48, paddingHorizontal: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  tipChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
+  tipChipText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  checkout: { marginHorizontal: layout.pagePadding, marginTop: 58, padding: 18, backgroundColor: colors.ink, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  checkoutWide: { width: 300, marginHorizontal: 0, marginTop: 54, padding: 22, flexDirection: 'column', alignItems: 'stretch' },
+  checkoutCopy: { flex: 1 },
+  checkoutLabel: { color: colors.blue, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 1.1 },
+  checkoutTitle: { color: colors.white, fontFamily: fonts.sans, fontSize: 17, fontWeight: '800', marginTop: 5 },
+  checkoutMeta: { color: '#A8A9AE', fontFamily: fonts.sans, fontSize: 10, marginTop: 3 },
+  checkoutError: { color: '#FF8C82', fontFamily: fonts.sans, fontSize: 9, lineHeight: 13, marginTop: 8 },
+  checkoutDetails: { marginTop: 24, borderTopWidth: 1, borderTopColor: '#393A3E' },
+  checkoutDetail: { minHeight: 54, borderBottomWidth: 1, borderBottomColor: '#393A3E', justifyContent: 'center' },
+  checkoutKey: { color: '#77787E', fontFamily: fonts.mono, fontSize: 7, fontWeight: '800', letterSpacing: 0.8 },
+  checkoutValue: { color: colors.white, fontFamily: fonts.sans, fontSize: 11, fontWeight: '800', textTransform: 'capitalize', marginTop: 5 },
+  confirmButton: { height: 52, paddingHorizontal: 17, flexDirection: 'row', gap: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.blue },
+  confirmButtonWide: { width: '100%', marginTop: 24, justifyContent: 'space-between' },
+  confirmDisabled: { backgroundColor: '#3A3B40' },
+  confirmText: { color: colors.white, fontFamily: fonts.sans, fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
+  pressed: { opacity: 0.72 },
+  successWrap: { width: '100%', maxWidth: 620, minHeight: 760, paddingHorizontal: layout.pagePadding, paddingTop: 76, paddingBottom: 40, alignItems: 'center', justifyContent: 'center' },
+  successMark: { width: 82, height: 82, borderRadius: 41, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  successEyebrow: { color: colors.blue, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginTop: 24 },
+  successTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 50, lineHeight: 47, fontWeight: '800', letterSpacing: -3, textAlign: 'center', marginTop: 14 },
+  successText: { color: colors.muted, fontFamily: fonts.sans, fontSize: 13, lineHeight: 19, textAlign: 'center', maxWidth: 320, marginTop: 15 },
+  successCard: { width: '100%', backgroundColor: colors.white, borderTopWidth: 6, borderTopColor: colors.blue, padding: 20, marginTop: 32 },
+  summaryLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 1.1 },
+  summaryDate: { color: colors.ink, fontFamily: fonts.sans, fontSize: 17, fontWeight: '700', textTransform: 'capitalize', marginTop: 18 },
+  summaryTime: { color: colors.blue, fontFamily: fonts.sans, fontSize: 48, lineHeight: 52, fontWeight: '800', letterSpacing: -2.5 },
+  summaryLine: { minHeight: 40, borderTopWidth: 1, borderColor: colors.line, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryKey: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, letterSpacing: 0.7 },
+  summaryValue: { color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: '800' },
+  pixCard: { width: '100%', marginTop: 12, padding: 16, backgroundColor: '#E7ECFA', borderWidth: 1, borderColor: '#CAD6F8', flexDirection: 'row', alignItems: 'center', gap: 12 },
+  pixIcon: { width: 42, height: 42, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  pixCopy: { flex: 1, minWidth: 0 },
+  pixLabel: { color: colors.blue, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.8 },
+  pixKey: { color: colors.ink, fontFamily: fonts.sans, fontSize: 11, fontWeight: '800', marginTop: 4 },
+  pixHint: { color: colors.muted, fontFamily: fonts.sans, fontSize: 8, lineHeight: 12, marginTop: 4 },
+  copyButton: { minWidth: 70, minHeight: 48, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' },
+  copyText: { color: colors.ink, fontFamily: fonts.mono, fontSize: 6, fontWeight: '900', letterSpacing: 0.5, marginTop: 3 },
+  primary: { width: '100%', height: 54, marginTop: 18, backgroundColor: colors.blue, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  primaryText: { color: colors.white, fontFamily: fonts.sans, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  secondary: { paddingVertical: 17, paddingHorizontal: 20 },
+  secondaryText: { color: colors.muted, fontFamily: fonts.sans, fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
+  mobileDock: { position: 'absolute', left: 12, right: 12, bottom: 12, minHeight: 76, padding: 10, paddingLeft: 16, backgroundColor: colors.ink, borderWidth: 1, borderColor: '#34353A', flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: '#000000', shadowOpacity: 0.24, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
+  mobileDockCopy: { flex: 1 },
+  mobileDockLabel: { color: '#85868B', fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 1 },
+  mobileDockValue: { color: colors.white, fontFamily: fonts.sans, fontSize: 17, fontWeight: '800', marginTop: 5 },
+  mobileDockButton: { minWidth: 132, minHeight: 54, paddingHorizontal: 14, backgroundColor: colors.blue, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  mobileDockButtonText: { color: colors.white, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
+});
