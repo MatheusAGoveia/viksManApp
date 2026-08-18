@@ -47,6 +47,19 @@ npm run ios        # requer macOS para simulador iOS
 npm run check      # TypeScript, lint e exportação web
 ```
 
+## Publicar na Vercel
+
+O repositório já inclui a configuração de build do Expo Web em `vercel.json`.
+Ao importar o GitHub na Vercel, use a raiz do repositório. A configuração aplica:
+
+- build command: `npm run export:web`;
+- output directory: `dist`;
+- install command: `npm install`;
+- fallback de SPA para `/book`, `/login`, `/admin` e demais rotas.
+
+As configurações públicas do Supabase usadas pelo bundle web ficam em
+`.env.production`. Chaves privadas nunca devem ser adicionadas a esse arquivo.
+
 ## Estrutura
 
 - `src/app`: telas, navegação responsiva e painel administrativo;
