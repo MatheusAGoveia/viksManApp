@@ -10,6 +10,7 @@ import { useAuth } from '@/context/auth-context';
 import { useBookings } from '@/context/booking-context';
 import { barbers, formatBookingDate, formatCurrency, services } from '@/data/catalog';
 import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
+import { getNextAvailableSlot, type NextAvailableSlot } from '@/lib/availability';
 import { supabase } from '@/lib/supabase';
 
 type LivePromotion = { id: string; title: string; message: string; discountLabel: string };
@@ -24,12 +25,19 @@ export default function HomeScreen() {
   const nextBarber = barbers.find((barber) => barber.id === next?.barberId);
   const firstName = profile?.fullName?.split(' ')[0] || user?.email?.split('@')[0] || '';
   const [promotion, setPromotion] = useState<LivePromotion>();
+  const [nextSlot, setNextSlot] = useState<NextAvailableSlot | null>();
 
   useEffect(() => {
     if (!supabase) return;
     supabase.from('promotions').select('id, title, message, discount_label').eq('status', 'sent').lte('starts_at', new Date().toISOString()).gt('ends_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => {
       if (data) setPromotion({ id: data.id, title: data.title, message: data.message, discountLabel: data.discount_label ?? '' });
     });
+  }, []);
+
+  useEffect(() => {
+    getNextAvailableSlot('cut')
+      .then(setNextSlot)
+      .catch(() => setNextSlot(null));
   }, []);
 
   function openBooking(serviceId?: string, barberId?: string) {
@@ -60,9 +68,9 @@ export default function HomeScreen() {
             <Text style={styles.bluePanelIndex}>01</Text>
             <View>
               <Text style={styles.bluePanelLabel}>PRÓXIMO ENCAIXE</Text>
-              <Text style={styles.bluePanelTime}>Hoje{`\n`}14:30</Text>
+              <Text style={styles.bluePanelTime}>{nextSlot === undefined ? <>Buscando{`\n`}horário</> : nextSlot ? <>{nextSlot.day}{`\n`}{nextSlot.time}</> : <>Sem encaixe{`\n`}próximo</>}</Text>
             </View>
-            <Pressable onPress={() => openBooking()} style={styles.bluePanelLink}><Text style={styles.bluePanelLinkText}>VER DISPONIBILIDADE</Text><Ionicons name="arrow-forward" color={colors.white} size={17} /></Pressable>
+            <Pressable onPress={() => openBooking('cut', 'first')} style={styles.bluePanelLink}><Text style={styles.bluePanelLinkText}>VER DISPONIBILIDADE</Text><Ionicons name="arrow-forward" color={colors.white} size={17} /></Pressable>
           </View>
         </View>
 

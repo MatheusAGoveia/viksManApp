@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, layout } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { barbers as localBarbers, formatCurrency, services as localServices } from '@/data/catalog';
+import { addIsoDays, brasiliaDateIso, brasiliaDateTimeToIso, brasiliaTodayIso } from '@/lib/brasilia-time';
 import { supabase } from '@/lib/supabase';
 import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 
@@ -18,7 +19,7 @@ type AdminAppointment = { id: string; startsAt: string; status: string; clientId
 type Block = { id: string; startsAt: string; endsAt: string; barberName: string; kind: string; reason: string };
 type Promotion = { id: string; title: string; message: string; audience: string; sendAt: string; startsAt: string; endsAt: string; status: string; discountLabel: string };
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = brasiliaTodayIso;
 const demoClients: Client[] = [
   { id: 'demo-1', name: 'Matheus Damião', phone: '(31) 99999-2104', email: 'matheus@demo.com' },
   { id: 'demo-2', name: 'Rafael Martins', phone: '(31) 98881-7432', email: 'rafael@demo.com' },
@@ -98,7 +99,7 @@ export default function AdminScreen() {
     }
     setLoading(true);
     const [appointmentResult, clientResult, serviceResult, barberResult, blockResult, promotionResult, unitResult] = await Promise.all([
-      supabase.from('appointments').select('id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,duration_minutes), barber:barbers(name)').gte('starts_at', new Date(`${anchorDate}T00:00:00-03:00`).toISOString()).lt('starts_at', new Date(new Date(`${anchorDate}T00:00:00-03:00`).getTime() + 8 * 86400000).toISOString()).order('starts_at'),
+      supabase.from('appointments').select('id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,duration_minutes), barber:barbers(name)').gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00')).lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00')).order('starts_at'),
       supabase.from('profiles').select('id, full_name, phone').eq('role', 'client').order('full_name').limit(100),
       supabase.from('services').select('id, slug, name, duration_minutes, price_cents, active').order('sort_order'),
       supabase.from('barbers').select('id, slug, name, active').order('sort_order'),
@@ -122,12 +123,12 @@ export default function AdminScreen() {
 
   useEffect(() => { queueMicrotask(loadRemote); }, [loadRemote]);
 
-  const visibleAppointments = useMemo(() => appointments.filter((item) => mode === 'week' || item.startsAt.slice(0, 10) === anchorDate), [anchorDate, appointments, mode]);
+  const visibleAppointments = useMemo(() => appointments.filter((item) => mode === 'week' || brasiliaDateIso(item.startsAt) === anchorDate), [anchorDate, appointments, mode]);
   const filteredClients = useMemo(() => clients.filter((client) => `${client.name} ${client.phone} ${client.email ?? ''}`.toLowerCase().includes(search.toLowerCase())), [clients, search]);
   const occupancy = Math.min(100, Math.round((visibleAppointments.length / (mode === 'day' ? 16 : 80)) * 100));
 
   function moveDate(direction: number) {
-    const next = new Date(`${anchorDate}T12:00:00`); next.setDate(next.getDate() + direction * (mode === 'week' ? 7 : 1)); setAnchorDate(next.toISOString().slice(0, 10));
+    setAnchorDate(addIsoDays(anchorDate, direction * (mode === 'week' ? 7 : 1)));
   }
 
   function openCreate(selectedClientId?: string) {
@@ -135,15 +136,29 @@ export default function AdminScreen() {
   }
 
   function openReschedule(item: AdminAppointment) {
-    setEditingId(item.id); setClientId(item.clientId); setServiceId(item.serviceId); setBarberId(item.barberId); setDate(item.startsAt.slice(0, 10)); setTime(formatTime(item.startsAt)); setShowEditor(true); setNotice('');
+    setEditingId(item.id); setClientId(item.clientId); setServiceId(item.serviceId); setBarberId(item.barberId); setDate(brasiliaDateIso(item.startsAt)); setTime(formatTime(item.startsAt)); setShowEditor(true); setNotice('');
   }
 
   async function saveAppointment() {
-    const service = serviceOptions.find((item) => item.id === serviceId); if (!service || !clientId || !barberId) return;
+    const service = serviceOptions.find((item) => item.id === serviceId); const barber = barberOptions.find((item) => item.id === barberId); if (!service || !barber || !clientId) return;
     setSaving(true); setNotice('');
-    const startsAt = new Date(`${date}T${time}:00-03:00`).toISOString();
-    const endsAt = new Date(new Date(startsAt).getTime() + (service.duration ?? 45) * 60000).toISOString();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) { setSaving(false); setNotice('Informe data e horário válidos.'); return; }
+    const startsAt = brasiliaDateTimeToIso(date, time);
+    const endsAt = new Date(new Date(startsAt).getTime() + ((service.duration ?? 45) + Number(ruleBuffer || 0)) * 60000).toISOString();
     if (supabase) {
+      const original = editingId ? appointments.find((item) => item.id === editingId) : undefined;
+      const unchangedSlot = Boolean(original && new Date(original.startsAt).getTime() === new Date(startsAt).getTime() && original.barberId === barberId && original.serviceId === serviceId);
+      if (!unchangedSlot) {
+        const availability = await supabase.rpc('get_available_slots', {
+          p_unit_slug: 'betim',
+          p_service_slug: service.slug,
+          p_day: date,
+          p_barber_slug: barber.slug,
+          p_party_size: 1,
+        });
+        const available = !availability.error && (availability.data ?? []).some((slot) => slot.starts_at === startsAt);
+        if (!available) { setSaving(false); setNotice('Este horário não está disponível pelas regras atuais da barbearia.'); return; }
+      }
       const unit = await supabase.from('units').select('id').eq('slug', 'betim').single();
       if (unit.error || !unit.data) { setSaving(false); setNotice('A unidade Betim não está disponível.'); return; }
       const result = editingId
@@ -169,7 +184,8 @@ export default function AdminScreen() {
 
   async function createBlock() {
     const barber = barberOptions.find((item) => item.id === barberId); if (!barber) return;
-    const startsAt = new Date(`${date}T${blockStart}:00-03:00`).toISOString(); const endsAt = new Date(`${date}T${blockEnd}:00-03:00`).toISOString();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(blockStart) || !/^\d{2}:\d{2}$/.test(blockEnd)) return setNotice('Informe data e horários válidos para o bloqueio.');
+    const startsAt = brasiliaDateTimeToIso(date, blockStart); const endsAt = brasiliaDateTimeToIso(date, blockEnd);
     if (endsAt <= startsAt) return setNotice('O fim do bloqueio precisa ser depois do início.');
     if (supabase) { const { error } = await supabase.from('schedule_blocks').insert({ barber_id: barberId, starts_at: startsAt, ends_at: endsAt, kind: 'block', reason: blockReason, created_by: auth.user?.id }); if (error) return setNotice(error.message); await loadRemote(); }
     else setBlocks((current) => [...current, { id: `block-${Date.now()}`, startsAt, endsAt, barberName: barber.name, kind: 'block', reason: blockReason }]);
@@ -220,7 +236,9 @@ export default function AdminScreen() {
 
   async function createPromotion() {
     if (!promoTitle.trim() || promoMessage.trim().length < 10 || !auth.user) return setNotice('Informe título e uma mensagem com pelo menos 10 caracteres.');
-    const sendAt = new Date(`${promoSendAt.replace(' ', 'T')}:00-03:00`); const endsAt = new Date(`${promoEndsAt.replace(' ', 'T')}:00-03:00`);
+    const [sendDate, sendTime] = promoSendAt.trim().split(/\s+/); const [endDate, endTime] = promoEndsAt.trim().split(/\s+/);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sendDate ?? '') || !/^\d{2}:\d{2}$/.test(sendTime ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate ?? '') || !/^\d{2}:\d{2}$/.test(endTime ?? '')) return setNotice('Use o formato AAAA-MM-DD HH:MM.');
+    const sendAt = new Date(brasiliaDateTimeToIso(sendDate ?? '', sendTime ?? '')); const endsAt = new Date(brasiliaDateTimeToIso(endDate ?? '', endTime ?? ''));
     if (Number.isNaN(sendAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= new Date()) return setNotice('Use data e hora válidas e um término futuro.');
     if (!supabase) { setNotice('Campanha simulada. Conecte o WhatsApp para envio real.'); return; }
     const { error } = await supabase.from('promotions').insert({ title: promoTitle.trim(), message: promoMessage.trim(), discount_label: promoDiscount.trim() || null, audience: promoAudience, starts_at: new Date().toISOString(), ends_at: endsAt.toISOString(), send_at: sendAt.toISOString(), status: 'scheduled', created_by: auth.user.id });

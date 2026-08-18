@@ -436,6 +436,54 @@ export type Database = {
           },
         ]
       }
+      products: {
+        Row: {
+          active: boolean
+          category: string
+          created_at: string
+          description: string | null
+          featured: boolean
+          id: string
+          image_url: string | null
+          name: string
+          price_cents: number
+          slug: string
+          sort_order: number
+          stock_quantity: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          description?: string | null
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          name: string
+          price_cents: number
+          slug: string
+          sort_order?: number
+          stock_quantity?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          description?: string | null
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          name?: string
+          price_cents?: number
+          slug?: string
+          sort_order?: number
+          stock_quantity?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       promotion_deliveries: {
         Row: {
           attempts: number
@@ -900,6 +948,19 @@ export type Database = {
         Args: {
           p_barber_slug?: string
           p_day: string
+          p_party_size?: number
+          p_service_slug: string
+          p_unit_slug: string
+        }
+        Returns: {
+          barber_name: string
+          barber_slug: string
+          starts_at: string
+        }[]
+      }
+      get_next_available_slot: {
+        Args: {
+          p_barber_slug?: string
           p_party_size?: number
           p_service_slug: string
           p_unit_slug: string

@@ -1,3 +1,5 @@
+import { makeBrasiliaDateOptions } from '@/lib/brasilia-time';
+
 export type Service = {
   id: string;
   name: string;
@@ -84,32 +86,17 @@ export const barbers: Barber[] = [
 export const timeSlots = ['09:00', '09:45', '10:30', '11:15', '14:00', '14:45', '16:00', '17:30', '18:15'];
 
 export function formatCurrency(value: number) {
+  const hasCents = Math.abs(value * 100) % 100 !== 0;
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
-function toIsoDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 export function makeDateOptions(total = 7) {
-  return Array.from({ length: total }, (_, index) => {
-    const date = new Date();
-    date.setHours(12, 0, 0, 0);
-    date.setDate(date.getDate() + index);
-    const weekday = index === 0
-      ? 'Hoje'
-      : new Intl.DateTimeFormat('pt-BR', { weekday: 'short' }).format(date).replace('.', '');
-    const day = new Intl.DateTimeFormat('pt-BR', { day: '2-digit' }).format(date);
-    const month = new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(date).replace('.', '');
-    return { iso: toIsoDate(date), weekday, date: `${day} ${month}` };
-  });
+  return makeBrasiliaDateOptions(total);
 }
 
 export function formatBookingDate(iso: string) {

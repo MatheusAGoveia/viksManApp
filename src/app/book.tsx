@@ -11,6 +11,7 @@ import { colors, fonts, layout } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useBookings } from '@/context/booking-context';
 import { barbers, formatBookingDate, formatCurrency, makeDateOptions, services, timeSlots } from '@/data/catalog';
+import { getNextAvailableSlot, type NextAvailableSlot } from '@/lib/availability';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 
@@ -27,7 +28,7 @@ export default function BookingScreen() {
   const { width } = useResponsiveLayout();
   const { user } = useAuth();
   const { addBooking } = useBookings();
-  const dates = useMemo(() => makeDateOptions(), []);
+  const dates = useMemo(() => makeDateOptions(14), []);
   const isWide = width >= 760;
   const [date, setDate] = useState<string>();
   const [time, setTime] = useState<string>();
@@ -39,6 +40,7 @@ export default function BookingScreen() {
   const [partySize, setPartySize] = useState(1);
   const [tipPercent, setTipPercent] = useState(0);
   const [pixCopied, setPixCopied] = useState(false);
+  const [nextSlots, setNextSlots] = useState<Record<string, NextAvailableSlot | null>>({});
 
   const incomingService = paramValue(params.service);
   const incomingBarber = paramValue(params.barber);
@@ -76,6 +78,19 @@ export default function BookingScreen() {
     }
     loadSlots();
   }, [barberId, date, partySize, serviceId]);
+
+  useEffect(() => {
+    if (!serviceId || !supabase) return;
+    let active = true;
+    Promise.all(barbers.map(async (barber) => [barber.id, await getNextAvailableSlot(serviceId, barber.id, partySize)] as const))
+      .then((results) => {
+        if (active) setNextSlots(Object.fromEntries(results));
+      })
+      .catch(() => {
+        if (active) setNextSlots({});
+      });
+    return () => { active = false; };
+  }, [partySize, serviceId]);
 
   function select(setter: (value: string) => void, value: string) {
     setter(value);
@@ -220,7 +235,7 @@ export default function BookingScreen() {
                   </View>
                   <View style={styles.barberAvailability}>
                     <Text style={styles.availableLabel}>PRÓXIMO</Text>
-                    <Text style={styles.availableText}>{barber.nextAvailable}</Text>
+                    <Text style={styles.availableText}>{!serviceId ? 'Escolha o serviço' : nextSlots[barber.id] === undefined ? 'Buscando…' : nextSlots[barber.id]?.display ?? 'Sem encaixe'}</Text>
                   </View>
                 </Pressable>
               );
@@ -230,6 +245,7 @@ export default function BookingScreen() {
 
         <View style={[styles.section, isWide && styles.sectionWide]}>
           <View style={styles.sectionHeading}><Text style={styles.step}>04</Text><Text style={styles.sectionTitle}>Qual dia?</Text></View>
+          {barberId && nextSlots[barberId] ? <Pressable onPress={() => { setDate(nextSlots[barberId]!.date); setTime(nextSlots[barberId]!.time); }} style={styles.suggestion}><View><Text style={styles.suggestionLabel}>PRÓXIMO ENCAIXE REAL</Text><Text style={styles.suggestionValue}>{nextSlots[barberId]!.display} · {nextSlots[barberId]!.barberName}</Text></View><View style={styles.suggestionAction}><Text style={styles.suggestionActionText}>USAR</Text><Ionicons name="arrow-forward" color={colors.white} size={16} /></View></Pressable> : null}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateList}>
             {dates.map((option) => {
               const selected = option.iso === date;
@@ -365,6 +381,11 @@ const styles = StyleSheet.create({
   barberAvailability: { alignItems: 'flex-end', maxWidth: 82 },
   availableLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 7, letterSpacing: 0.7 },
   availableText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 10, lineHeight: 14, fontWeight: '700', textAlign: 'right', marginTop: 4 },
+  suggestion: { minHeight: 72, padding: 14, marginBottom: 14, backgroundColor: '#E7ECFA', borderLeftWidth: 4, borderLeftColor: colors.blue, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  suggestionLabel: { color: colors.blue, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.9 },
+  suggestionValue: { color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: '800', marginTop: 5 },
+  suggestionAction: { minWidth: 70, minHeight: 44, paddingHorizontal: 10, backgroundColor: colors.blue, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  suggestionActionText: { color: colors.white, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
   dateList: { gap: 9, paddingRight: layout.pagePadding },
   dateCard: { width: 88, minHeight: 84, padding: 13, justifyContent: 'space-between', backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
   dateSelected: { backgroundColor: colors.blue, borderColor: colors.blue },

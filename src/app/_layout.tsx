@@ -80,6 +80,13 @@ function AppTabs() {
           }}
         />
         <Tabs.Screen
+          name="products"
+          options={{
+            title: 'Produtos',
+            tabBarIcon: ({ color, size }) => <Ionicons name="bag-handle-outline" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
           name="profile"
           options={{
             title: 'Perfil',

@@ -3,6 +3,7 @@ import { createContext, PropsWithChildren, useCallback, useContext, useEffect, u
 
 import { useAuth } from '@/context/auth-context';
 import { barbers, makeDateOptions, services } from '@/data/catalog';
+import { brasiliaDateTimeToIso } from '@/lib/brasilia-time';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type Booking = {
@@ -145,7 +146,7 @@ export function BookingProvider({ children }: PropsWithChildren) {
   async function addBooking(input: Omit<Booking, 'id' | 'status'>) {
     if (supabase) {
       if (!user) throw new Error('AUTH_REQUIRED');
-      const startsAt = new Date(`${input.date}T${input.time}:00-03:00`).toISOString();
+      const startsAt = brasiliaDateTimeToIso(input.date, input.time);
       const { data, error } = await supabase.rpc('create_appointment', {
         p_unit_slug: 'betim',
         p_service_slug: input.serviceId,
