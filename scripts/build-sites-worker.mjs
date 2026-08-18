@@ -52,13 +52,14 @@ function findAsset(pathname) {
   if (path === '/') path = '/index.html';
   if (path.endsWith('/')) path = path.slice(0, -1);
   if (!files[path] && !path.includes('.')) path = path + '.html';
-  return files[path] ?? files['/+not-found.html'];
+  return files[path] ?? files['/+not-found.html'] ?? files['/index.html'];
 }
 export default {
   async fetch(request) {
     const asset = findAsset(new URL(request.url).pathname);
+    const notFound = files['/+not-found.html'];
     return new Response(decode(asset.body), {
-      status: asset === files['/+not-found.html'] ? 404 : 200,
+      status: notFound && asset === notFound ? 404 : 200,
       headers: {
         'Content-Type': asset.type,
         'Cache-Control': asset.type.startsWith('text/html') ? 'no-cache' : 'public, max-age=31536000, immutable',
