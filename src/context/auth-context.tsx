@@ -38,9 +38,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function emailRedirectUrl() {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return `${window.location.origin}/account`;
+    return `${window.location.origin}/profile`;
   }
-  return 'viksman://account';
+  return 'viksman://profile';
 }
 
 function mapProfile(row: Record<string, unknown>): ClientProfile {
