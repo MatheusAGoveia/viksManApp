@@ -89,8 +89,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function signInWithEmail(email: string, password: string): Promise<AuthResult> {
     if (!supabase) return { error: 'Backend ainda não configurado.' };
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    return error ? { error: error.message } : {};
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return { error: error.message };
+    setSession(data.session);
+    await loadProfile(data.session?.user.id);
+    return {};
   }
 
   async function signUpWithEmail(fullName: string, email: string, password: string): Promise<AuthResult> {

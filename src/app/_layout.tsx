@@ -4,15 +4,27 @@ import { StatusBar } from 'expo-status-bar';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { colors, fonts, layout } from '@/constants/theme';
-import { AuthProvider } from '@/context/auth-context';
+import { AuthProvider, useAuth } from '@/context/auth-context';
 import { BookingProvider } from '@/context/booking-context';
 import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 
 export default function RootLayout() {
-  const { desktop } = useResponsiveLayout();
   return (
     <AuthProvider>
       <BookingProvider>
+        <AppTabs />
+        <AnimatedSplashOverlay />
+      </BookingProvider>
+    </AuthProvider>
+  );
+}
+
+function AppTabs() {
+  const { desktop } = useResponsiveLayout();
+  const auth = useAuth();
+
+  return (
+    <>
         <StatusBar style="light" />
         <Tabs
           screenOptions={{
@@ -75,10 +87,15 @@ export default function RootLayout() {
           }}
         />
         <Tabs.Screen name="login" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-        <Tabs.Screen name="admin" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+        <Tabs.Screen
+          name="admin"
+          options={{
+            href: auth.isStaff ? '/admin' : null,
+            title: 'Gestão',
+            tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" color={color} size={size} />,
+          }}
+        />
       </Tabs>
-      <AnimatedSplashOverlay />
-      </BookingProvider>
-    </AuthProvider>
+    </>
   );
 }
