@@ -1,10 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
 import { styles } from '../styles';
 import { AvailableSlotsSelector } from './AvailableSlotsSelector';
+import { CalendarModal } from './CalendarModal';
 
 type DateTimePickerSelectorsProps = {
   date: string;
@@ -40,19 +41,20 @@ export function DateTimePickerSelectors({
   onRetrySlots,
 }: DateTimePickerSelectorsProps) {
   const dateInputRef = useRef<HTMLInputElement>(null);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   const handleOpenDatePicker = () => {
     if (Platform.OS === 'web' && dateInputRef.current) {
       try {
         if (typeof dateInputRef.current.showPicker === 'function') {
           dateInputRef.current.showPicker();
-        } else {
-          dateInputRef.current.click();
+          return;
         }
       } catch {
-        dateInputRef.current.click();
+        // Fallback to custom CalendarModal on failure or mobile browsers
       }
     }
+    setShowCalendarModal(true);
   };
 
   return (
@@ -87,6 +89,13 @@ export function DateTimePickerSelectors({
           />
         )}
       </Pressable>
+
+      <CalendarModal
+        visible={showCalendarModal}
+        selectedDateIso={date}
+        onSelectDate={onSelectDate}
+        onClose={() => setShowCalendarModal(false)}
+      />
 
       {/* Available Slots Grid & State Selector */}
       <AvailableSlotsSelector

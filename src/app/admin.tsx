@@ -61,7 +61,6 @@ export default function AdminScreen() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [loading, setLoading] = useState(Boolean(supabase));
   const [notice, setNotice] = useState('');
-  const [search, setSearch] = useState('');
   const [showEditor, setShowEditor] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [clientId, setClientId] = useState('');
@@ -263,16 +262,6 @@ export default function AdminScreen() {
     [anchorDate, appointments, mode],
   );
 
-  const filteredClients = useMemo(
-    () =>
-      clients.filter((client) =>
-        `${client.name} ${client.phone} ${client.email ?? ''}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
-      ),
-    [clients, search],
-  );
-
   const occupancy = Math.min(
     100,
     Math.round((visibleAppointments.length / (mode === 'day' ? 16 : 80)) * 100),
@@ -300,17 +289,27 @@ export default function AdminScreen() {
     setSlotsError('');
 
     if (supabase) {
-      const availability = await supabase.rpc('get_available_slots', {
+      const rpcParams: Record<string, unknown> = {
         p_unit_slug: 'betim',
         p_service_slug: service.slug,
         p_day: date,
         p_barber_slug: barber.slug,
         p_party_size: 1,
-      });
+      };
+      if (editingId) {
+        rpcParams.p_ignore_appointment_id = editingId;
+      }
+
+      let availability = await supabase.rpc('get_available_slots', rpcParams as any);
+      if (availability.error && editingId && rpcParams.p_ignore_appointment_id) {
+        delete rpcParams.p_ignore_appointment_id;
+        availability = await supabase.rpc('get_available_slots', rpcParams as any);
+      }
 
       if (activeKeyRef.current !== requestKey) return;
 
       if (availability.error) {
+        console.error('[Available Slots RPC Error]', availability.error);
         setSlotsLoading(false);
         setSlotsError('Não foi possível consultar os horários disponíveis.');
         setAvailableTimeSlots([]);
@@ -328,25 +327,6 @@ export default function AdminScreen() {
         }).format(d);
       });
 
-      if (editingId) {
-        const originalApp = appointments.find((item) => item.id === editingId);
-        if (originalApp) {
-          const originalTime = new Intl.DateTimeFormat('pt-BR', {
-            timeZone: 'America/Sao_Paulo',
-            hour: '2-digit',
-            minute: '2-digit',
-            hourCycle: 'h23',
-          }).format(new Date(originalApp.startsAt));
-
-          const originalDate = brasiliaDateIso(originalApp.startsAt);
-
-          if (originalDate === date && originalApp.barberId === barberId && !formatted.includes(originalTime)) {
-            formatted.push(originalTime);
-            formatted.sort();
-          }
-        }
-      }
-
       setAvailableTimeSlots(formatted);
       setSlotsLoading(false);
     } else {
@@ -356,7 +336,7 @@ export default function AdminScreen() {
       setAvailableTimeSlots(demoSlots);
       setSlotsLoading(false);
     }
-  }, [serviceId, barberId, date, serviceOptions, barberOptions, editingId, appointments]);
+  }, [serviceId, barberId, date, serviceOptions, barberOptions, editingId]);
 
   useEffect(() => {
     if (showEditor) {
@@ -452,43 +432,33 @@ export default function AdminScreen() {
       );
 
       if (!unchangedSlot) {
-        const availability = await supabase.rpc('get_available_slots', {
+        const rpcParams: Record<string, unknown> = {
           p_unit_slug: 'betim',
           p_service_slug: service.slug,
           p_day: date,
           p_barber_slug: barber.slug,
           p_party_size: 1,
-        });
+        };
+        if (editingId) {
+          rpcParams.p_ignore_appointment_id = editingId;
+        }
+
+        let availability = await supabase.rpc('get_available_slots', rpcParams as any);
+        if (availability.error && editingId && rpcParams.p_ignore_appointment_id) {
+          delete rpcParams.p_ignore_appointment_id;
+          availability = await supabase.rpc('get_available_slots', rpcParams as any);
+        }
 
         if (availability.error) {
+          console.error('[Availability RPC Error]', availability.error);
           setSaving(false);
-          setNotice(`Falha ao consultar disponibilidade no servidor: ${availability.error.message}`);
+          setNotice('Não foi possível validar a disponibilidade do horário.');
           return;
         }
 
-        const isAvailableInRpc = (availability.data ?? []).some(
+        const isAvailable = (availability.data ?? []).some(
           (slot: Record<string, unknown>) => new Date(String(slot.starts_at)).getTime() === startsAtMs,
         );
-
-        let isAvailable = isAvailableInRpc;
-
-        // Auto-conflict handling when rescheduling:
-        // If editingId exists and slot wasn't returned by RPC because of original appointment's own overlap,
-        // verify if any OTHER active appointment (where id <> editingId) overlaps with the desired range.
-        if (!isAvailable && editingId) {
-          const { data: overlapData, error: overlapError } = await supabase
-            .from('appointments')
-            .select('id')
-            .eq('barber_id', barberId)
-            .in('status', ['pending', 'confirmed', 'checked_in', 'in_service'])
-            .neq('id', editingId)
-            .lt('starts_at', endsAt)
-            .gt('ends_at', startsAt);
-
-          if (!overlapError && (!overlapData || overlapData.length === 0)) {
-            isAvailable = true;
-          }
-        }
 
         if (!isAvailable) {
           setSaving(false);
@@ -872,10 +842,6 @@ export default function AdminScreen() {
 
             {tab === 'clients' ? (
               <ClientsTab
-                clientsCount={clients.length}
-                search={search}
-                setSearch={setSearch}
-                filteredClients={filteredClients}
                 onSelectClient={(selectedClientId) => {
                   setTab('agenda');
                   openCreate(selectedClientId);
