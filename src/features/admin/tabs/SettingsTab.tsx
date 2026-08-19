@@ -34,6 +34,7 @@ type SettingsTabProps = {
   setPixKey: (value: string) => void;
   saveRules: () => void;
   blocks: Block[];
+  canEditStoreSettings?: boolean;
   wide?: boolean;
 };
 
@@ -62,6 +63,7 @@ export function SettingsTab({
   setPixKey,
   saveRules,
   blocks,
+  canEditStoreSettings = true,
   wide,
 }: SettingsTabProps) {
   return (
@@ -98,28 +100,30 @@ export function SettingsTab({
           </Pressable>
         </View>
 
-        <View style={styles.operationCard}>
-          <Text style={styles.cardTitle}>REGRAS COMERCIAIS</Text>
+        {canEditStoreSettings ? (
+          <View style={styles.operationCard}>
+            <Text style={styles.cardTitle}>REGRAS COMERCIAIS (GERÊNCIA)</Text>
 
-          <View style={styles.inputPair}>
-            <LabeledInput label="CANCELAMENTO (H)" value={ruleCancellation} onChangeText={setRuleCancellation} placeholder="4" />
-            <LabeledInput label="INTERVALO (MIN)" value={ruleBuffer} onChangeText={setRuleBuffer} placeholder="5" />
+            <View style={styles.inputPair}>
+              <LabeledInput label="CANCELAMENTO (H)" value={ruleCancellation} onChangeText={setRuleCancellation} placeholder="4" />
+              <LabeledInput label="INTERVALO (MIN)" value={ruleBuffer} onChangeText={setRuleBuffer} placeholder="5" />
+            </View>
+
+            <View style={styles.inputPair}>
+              <LabeledInput label="ANTECEDÊNCIA (MIN)" value={ruleNotice} onChangeText={setRuleNotice} placeholder="60" />
+              <LabeledInput label="AGENDA ABERTA (DIAS)" value={ruleWindow} onChangeText={setRuleWindow} placeholder="60" />
+            </View>
+
+            <LabeledInput label="CHAVE PIX" value={pixKey} onChangeText={setPixKey} placeholder="Chave PIX da unidade" />
+
+            <RuleItem label="Encaixes" value="Permitidos" />
+            <RuleItem label="Primeiro disponível" value="Menor horário livre" />
+
+            <Pressable onPress={saveRules} style={styles.operationButton}>
+              <Text style={styles.operationButtonText}>SALVAR REGRAS</Text>
+            </Pressable>
           </View>
-
-          <View style={styles.inputPair}>
-            <LabeledInput label="ANTECEDÊNCIA (MIN)" value={ruleNotice} onChangeText={setRuleNotice} placeholder="60" />
-            <LabeledInput label="AGENDA ABERTA (DIAS)" value={ruleWindow} onChangeText={setRuleWindow} placeholder="60" />
-          </View>
-
-          <LabeledInput label="CHAVE PIX" value={pixKey} onChangeText={setPixKey} placeholder="Chave PIX da unidade" />
-
-          <RuleItem label="Encaixes" value="Permitidos" />
-          <RuleItem label="Primeiro disponível" value="Menor horário livre" />
-
-          <Pressable onPress={saveRules} style={styles.operationButton}>
-            <Text style={styles.operationButtonText}>SALVAR REGRAS</Text>
-          </Pressable>
-        </View>
+        ) : null}
       </View>
 
       <Text style={styles.subheading}>PRÓXIMOS BLOQUEIOS</Text>

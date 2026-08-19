@@ -25,6 +25,7 @@ type AuthContextValue = {
   loading: boolean;
   configured: boolean;
   isStaff: boolean;
+  isManager: boolean;
   signInWithEmail: (email: string, password: string) => Promise<AuthResult>;
   signUpWithEmail: (fullName: string, email: string, password: string) => Promise<AuthResult>;
   resetPassword: (email: string) => Promise<AuthResult>;
@@ -151,6 +152,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     loading,
     configured: isSupabaseConfigured,
     isStaff: Boolean(profile && profile.role !== 'client'),
+    isManager: Boolean(profile && ['manager', 'admin'].includes(profile.role)),
     signInWithEmail,
     signUpWithEmail,
     resetPassword,

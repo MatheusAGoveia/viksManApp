@@ -623,6 +623,7 @@ export default function AdminScreen() {
   }
 
   async function saveRules() {
+    if (!auth.isManager) return setNotice('Apenas gerência/administração pode alterar as configurações da unidade.');
     if (!supabase) return setNotice('Regras salvas na demonstração.');
     const { error } = await supabase
       .from('units')
@@ -780,6 +781,7 @@ export default function AdminScreen() {
                 setPixKey={setPixKey}
                 saveRules={saveRules}
                 blocks={blocks}
+                canEditStoreSettings={auth.isManager}
                 wide={wide}
               />
             ) : null}
