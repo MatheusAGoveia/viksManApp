@@ -256,7 +256,7 @@ function saveDemoPlan(input: {
 }
 
 export async function fetchClientSubscription(clientId: string): Promise<ViksClubSubscription | null> {
-  if (!isSupabaseActive() || !supabase || !clientId) {
+  if (!isSupabaseActive() || !supabase || !clientId || !isUuid(clientId)) {
     return demoSubscriptions[clientId] || null;
   }
 
@@ -332,7 +332,7 @@ export async function activateSubscription(
   cycles = 1,
   barberId?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase) {
+  if (!isSupabaseActive() || !supabase || !isUuid(clientId) || !isUuid(planId)) {
     return fallbackDemoActivate(clientId, planId, cycles, barberId);
   }
 
@@ -394,7 +394,7 @@ export async function renewSubscription(
   clientId: string,
   cycles = 1,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase) {
+  if (!isSupabaseActive() || !supabase || !isUuid(subscriptionId)) {
     return fallbackDemoRenew(subscriptionId, clientId, cycles);
   }
 
@@ -437,7 +437,7 @@ export async function updateSubscriptionStatus(
   clientId: string,
   newStatus: SubscriptionStatus,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase) {
+  if (!isSupabaseActive() || !supabase || !isUuid(subscriptionId)) {
     return fallbackDemoStatus(subscriptionId, clientId, newStatus);
   }
 
@@ -472,9 +472,9 @@ export async function consumeBenefit(
   appointmentId?: string,
   quantity = 1,
   notes?: string,
-): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase) {
-    return fallbackDemoConsume(subscriptionBenefitId, clientId, quantity);
+): Promise<{ success: boolean; error?: string; remaining?: number; discountCentsApplied?: number }> {
+  if (!isSupabaseActive() || !supabase || !isUuid(subscriptionBenefitId) || (appointmentId && !isUuid(appointmentId))) {
+    return fallbackDemoConsumeBenefit(subscriptionBenefitId, clientId, appointmentId, quantity, notes);
   }
 
   try {
@@ -488,13 +488,18 @@ export async function consumeBenefit(
     if (error) {
       return { success: false, error: error.message };
     }
-    return { success: Boolean((data as Record<string, unknown> | null)?.success) };
+    const res = data as any;
+    return { 
+      success: Boolean(res?.success), 
+      remaining: Number(res?.remaining ?? 0),
+      discountCentsApplied: Number(res?.discount_cents_applied ?? 0)
+    };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Erro ao registrar consumo de benefício.' };
   }
 }
 
-function fallbackDemoConsume(subscriptionBenefitId: string, clientId: string, quantity: number) {
+function fallbackDemoConsumeBenefit(subscriptionBenefitId: string, clientId: string, appointmentId?: string, quantity = 1, notes?: string) {
   const sub = demoSubscriptions[clientId];
   if (!sub || sub.status !== 'active' || !sub.benefits) {
     return { success: false, error: 'Assinatura inativa ou sem benefícios.' };
@@ -505,21 +510,21 @@ function fallbackDemoConsume(subscriptionBenefitId: string, clientId: string, qu
     return { success: false, error: `Saldo insuficiente (Disponível: ${b.quantityGranted - b.quantityUsed}).` };
   }
   b.quantityUsed += quantity;
-  return { success: true };
+  return { success: true, remaining: b.quantityGranted - b.quantityUsed };
 }
 
 export async function voidBenefitUsage(
   usageId: string,
-  reason = 'Estorno de atendimento',
+  reason?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase) {
+  if (!isSupabaseActive() || !supabase || !isUuid(usageId)) {
     return { success: true };
   }
 
   try {
     const { data, error } = await supabase.rpc('void_viks_club_benefit_usage', {
       p_usage_id: usageId,
-      p_reason: reason,
+      p_reason: reason || null,
     });
 
     if (error) {
@@ -532,25 +537,8 @@ export async function voidBenefitUsage(
 }
 
 export async function fetchLoyaltyTransactions(clientId: string): Promise<LoyaltyTransaction[]> {
-  if (!isSupabaseActive() || !supabase || !clientId) {
-    return demoTransactions[clientId] || [
-      {
-        id: 'tx-1',
-        clientId,
-        type: 'earn',
-        points: 100,
-        reason: 'Atendimento presencial',
-        createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      },
-      {
-        id: 'tx-2',
-        clientId,
-        type: 'adjustment_credit',
-        points: 50,
-        reason: 'Bônus de Boas-Vindas Viks',
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-      },
-    ];
+  if (!isSupabaseActive() || !supabase || !clientId || !isUuid(clientId)) {
+    return demoTransactions[clientId] || [];
   }
 
   const { data, error } = await supabase
@@ -582,8 +570,8 @@ export async function manageLoyaltyPoints(
   points: number,
   reason: string,
   appointmentId?: string,
-): Promise<{ success: boolean; newBalance?: number; error?: string }> {
-  if (!isSupabaseActive() || !supabase) {
+): Promise<{ success: boolean; error?: string; newBalance?: number }> {
+  if (!isSupabaseActive() || !supabase || !isUuid(clientId) || (appointmentId && !isUuid(appointmentId))) {
     return fallbackDemoManageLoyalty(clientId, type, points, reason, appointmentId);
   }
 
@@ -634,7 +622,7 @@ export async function rescheduleAppointment(
   date: string,
   time: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase) {
+  if (!isSupabaseActive() || !supabase || !isUuid(appointmentId)) {
     return { success: true };
   }
   try {
