@@ -31,6 +31,7 @@ export type AdminAppointment = {
   partySize: number;
   totalCents: number;
   paymentStatus: string;
+  prefersSilentService: boolean;
 };
 
 export type Block = {

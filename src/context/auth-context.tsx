@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type UserRole = 'client' | 'barber' | 'reception' | 'manager' | 'admin';
+export type ViksClubStatus = 'inactive' | 'active' | 'paused' | 'canceled';
 
 export type ClientProfile = {
   id: string;
@@ -14,6 +15,10 @@ export type ClientProfile = {
   role: UserRole;
   marketingConsent: boolean;
   whatsappConsent: boolean;
+  preferredBarberId: string | null;
+  prefersSilentService: boolean;
+  viksClubStatus: ViksClubStatus;
+  viksPointsBalance: number;
 };
 
 type AuthResult = { error?: string; message?: string };
@@ -29,7 +34,7 @@ type AuthContextValue = {
   signInWithEmail: (email: string, password: string) => Promise<AuthResult>;
   signUpWithEmail: (fullName: string, email: string, password: string) => Promise<AuthResult>;
   resetPassword: (email: string) => Promise<AuthResult>;
-  updateProfile: (input: Partial<Omit<ClientProfile, 'id' | 'role'>>) => Promise<AuthResult>;
+  updateProfile: (input: Partial<Omit<ClientProfile, 'id' | 'role' | 'viksClubStatus' | 'viksPointsBalance'>>) => Promise<AuthResult>;
   deleteAccount: () => Promise<AuthResult>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -53,6 +58,10 @@ function mapProfile(row: Record<string, unknown>): ClientProfile {
     role: (row.role as UserRole) ?? 'client',
     marketingConsent: Boolean(row.marketing_consent),
     whatsappConsent: Boolean(row.whatsapp_consent),
+    preferredBarberId: row.preferred_barber_id ? String(row.preferred_barber_id) : null,
+    prefersSilentService: Boolean(row.prefers_silent_service),
+    viksClubStatus: (row.viks_club_status as ViksClubStatus) ?? 'inactive',
+    viksPointsBalance: Number(row.viks_points_balance ?? 0),
   };
 }
 
@@ -119,17 +128,64 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return error ? { error: error.message } : { message: 'Enviamos as instruções para seu e-mail.' };
   }
 
-  async function updateProfile(input: Partial<Omit<ClientProfile, 'id' | 'role'>>): Promise<AuthResult> {
-    if (!supabase || !user) return { error: 'Entre na sua conta para editar o perfil.' };
-    const payload = {
-      full_name: input.fullName,
-      phone: input.phone,
-      birth_date: input.birthDate,
-      marketing_consent: input.marketingConsent,
-      whatsapp_consent: input.whatsappConsent,
-    };
-    const { error } = await supabase.from('profiles').update(payload).eq('id', user.id);
-    if (!error) await loadProfile(user.id);
+  async function updateProfile(
+    input: Partial<Omit<ClientProfile, 'id' | 'role' | 'viksClubStatus' | 'viksPointsBalance'>>,
+  ): Promise<AuthResult> {
+    if (!supabase || !user) {
+      // Demo mode / offline support: update local state directly
+      if (profile) {
+        setProfile({
+          ...profile,
+          ...(input.fullName !== undefined && { fullName: input.fullName }),
+          ...(input.phone !== undefined && { phone: input.phone }),
+          ...(input.birthDate !== undefined && { birthDate: input.birthDate }),
+          ...(input.marketingConsent !== undefined && { marketingConsent: input.marketingConsent }),
+          ...(input.whatsappConsent !== undefined && { whatsappConsent: input.whatsappConsent }),
+          ...(input.preferredBarberId !== undefined && { preferredBarberId: input.preferredBarberId }),
+          ...(input.prefersSilentService !== undefined && { prefersSilentService: input.prefersSilentService }),
+        });
+        return {};
+      }
+      return { error: 'Entre na sua conta para editar o perfil.' };
+    }
+
+    const payload: Record<string, unknown> = {};
+    if (input.fullName !== undefined) payload.full_name = input.fullName;
+    if (input.phone !== undefined) payload.phone = input.phone;
+    if (input.birthDate !== undefined) payload.birth_date = input.birthDate;
+    if (input.marketingConsent !== undefined) payload.marketing_consent = input.marketingConsent;
+    if (input.whatsappConsent !== undefined) payload.whatsapp_consent = input.whatsappConsent;
+    if (input.preferredBarberId !== undefined) payload.preferred_barber_id = input.preferredBarberId;
+    if (input.prefersSilentService !== undefined) payload.prefers_silent_service = input.prefersSilentService;
+
+    let { error } = await supabase.from('profiles').update(payload as any).eq('id', user.id);
+    if (error && (error.message.includes('prefers_silent_service') || error.message.includes('preferred_barber_id') || error.message.includes('schema cache'))) {
+      delete payload.prefers_silent_service;
+      delete payload.preferred_barber_id;
+      if (Object.keys(payload).length > 0) {
+        const retry = await supabase.from('profiles').update(payload as any).eq('id', user.id);
+        error = retry.error;
+      } else {
+        error = null;
+      }
+    }
+    if (!error) {
+      await loadProfile(user.id);
+      setProfile((current) =>
+        current
+          ? {
+              ...current,
+              ...(input.fullName !== undefined && { fullName: input.fullName }),
+              ...(input.phone !== undefined && { phone: input.phone }),
+              ...(input.birthDate !== undefined && { birthDate: input.birthDate }),
+              ...(input.marketingConsent !== undefined && { marketingConsent: input.marketingConsent }),
+              ...(input.whatsappConsent !== undefined && { whatsappConsent: input.whatsappConsent }),
+              ...(input.preferredBarberId !== undefined && { preferredBarberId: input.preferredBarberId }),
+              ...(input.prefersSilentService !== undefined && { prefersSilentService: input.prefersSilentService }),
+            }
+          : null,
+      );
+    }
     return error ? { error: error.message } : {};
   }
 

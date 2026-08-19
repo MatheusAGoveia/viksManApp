@@ -128,7 +128,7 @@ export default function AdminScreen() {
     }
     setLoading(true);
     const [
-      appointmentResult,
+      rawAppointmentResult,
       serviceResult,
       barberResult,
       blockResult,
@@ -138,7 +138,7 @@ export default function AdminScreen() {
       supabase
         .from('appointments')
         .select(
-          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,duration_minutes), barber:barbers(name)',
+          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, gratuity_cents, payment_status, client:profiles(full_name, prefers_silent_service), service:services(name,duration_minutes), barber:barbers(name)',
         )
         .gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00'))
         .lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00'))
@@ -163,9 +163,21 @@ export default function AdminScreen() {
         .single(),
     ]);
 
+    let appointmentResult: any = rawAppointmentResult;
+    if (appointmentResult.error && (appointmentResult.error.message.includes('prefers_silent_service') || appointmentResult.error.message.includes('schema cache'))) {
+      appointmentResult = await supabase
+        .from('appointments')
+        .select(
+          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,duration_minutes), barber:barbers(name)',
+        )
+        .gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00'))
+        .lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00'))
+        .order('starts_at');
+    }
+
     if (!appointmentResult.error) {
       setAppointments(
-        (appointmentResult.data ?? []).map((item) => {
+        ((appointmentResult.data ?? []) as Record<string, unknown>[]).map((item) => {
           const row = item as Record<string, unknown>;
           const client = joined(row.client);
           const service = joined(row.service);
@@ -187,6 +199,7 @@ export default function AdminScreen() {
             partySize,
             totalCents,
             paymentStatus: String(row.payment_status ?? 'pending'),
+            prefersSilentService: Boolean(client?.prefers_silent_service),
           };
         }),
       );
@@ -519,6 +532,7 @@ export default function AdminScreen() {
         partySize: 1,
         totalCents: Math.round((service.price ?? 0) * 100),
         paymentStatus: 'pending',
+        prefersSilentService: false,
       };
       setAppointments((current) =>
         editingId

@@ -398,8 +398,11 @@ export type Database = {
           marketing_consent: boolean
           phone: string | null
           preferred_barber_id: string | null
+          prefers_silent_service: boolean
           role: string
           updated_at: string
+          viks_club_status: string
+          viks_points_balance: number
           whatsapp_consent: boolean
         }
         Insert: {
@@ -410,8 +413,11 @@ export type Database = {
           marketing_consent?: boolean
           phone?: string | null
           preferred_barber_id?: string | null
+          prefers_silent_service?: boolean
           role?: string
           updated_at?: string
+          viks_club_status?: string
+          viks_points_balance?: number
           whatsapp_consent?: boolean
         }
         Update: {
@@ -422,8 +428,11 @@ export type Database = {
           marketing_consent?: boolean
           phone?: string | null
           preferred_barber_id?: string | null
+          prefers_silent_service?: boolean
           role?: string
           updated_at?: string
+          viks_club_status?: string
+          viks_points_balance?: number
           whatsapp_consent?: boolean
         }
         Relationships: [

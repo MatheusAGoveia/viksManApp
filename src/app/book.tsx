@@ -3,7 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandLockup } from '@/components/brand-ui';
@@ -23,10 +23,40 @@ const PIX_KEY = 'matheusaagd2@gmail.com';
 const partyOptions = [1, 2, 3, 4, 5, 6];
 const tipOptions = [0, 5, 10, 15];
 
+function filterSlotsForDuration(slots: string[], totalDurationMinutes: number): string[] {
+  if (slots.length === 0 || totalDurationMinutes <= 45) return slots;
+
+  const toMinutes = (timeStr: string) => {
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const CLOSING_MINUTES = 19 * 60;
+  const slotMinutes = slots.map(toMinutes);
+
+  return slots.filter((_, index) => {
+    const startMins = slotMinutes[index];
+    let currentEndMins = startMins + 45;
+
+    for (let j = index + 1; j < slotMinutes.length; j++) {
+      const nextStartMins = slotMinutes[j];
+      if (nextStartMins <= currentEndMins) {
+        currentEndMins = nextStartMins + 45;
+      } else {
+        break;
+      }
+    }
+
+    const availableWindow = Math.min(currentEndMins, CLOSING_MINUTES) - startMins;
+    return availableWindow >= totalDurationMinutes;
+  });
+}
+
 export default function BookingScreen() {
   const params = useLocalSearchParams<{ service?: string; barber?: string }>();
   const { width } = useResponsiveLayout();
-  const { user } = useAuth();
+  const auth = useAuth();
+  const { user } = auth;
   const { addBooking } = useBookings();
   const dates = useMemo(() => makeDateOptions(14), []);
   const isWide = width >= 760;
@@ -40,30 +70,220 @@ export default function BookingScreen() {
   const [partySize, setPartySize] = useState(1);
   const [tipPercent, setTipPercent] = useState(0);
   const [pixCopied, setPixCopied] = useState(false);
-  const [nextSlots, setNextSlots] = useState<Record<string, NextAvailableSlot | null>>({});
+  const activeBarbersList = useMemo(() => barbers.filter((b) => b.id !== 'first'), []);
+  const maxSimultaneous = activeBarbersList.length;
 
-  const incomingService = paramValue(params.service);
+  const [nextSlots, setNextSlots] = useState<Record<string, NextAvailableSlot | null>>({});
+  const [silentService, setSilentService] = useState<boolean>(auth.profile?.prefersSilentService ?? false);
+  const [groupMode, setGroupMode] = useState<'consecutive' | 'simultaneous'>('consecutive');
+  const [sameServiceForGroup, setSameServiceForGroup] = useState<boolean>(true);
+  const [activePersonIndex, setActivePersonIndex] = useState<number>(0);
+  const [groupServicesMap, setGroupServicesMap] = useState<Record<number, string[]>>({ 0: ['cut'] });
+
+  const incomingServiceParam = paramValue(params.service);
   const incomingBarber = paramValue(params.barber);
-  const serviceId = services.some((item) => item.id === incomingService) ? incomingService : undefined;
+
+  useEffect(() => {
+    if (auth.profile?.prefersSilentService !== undefined) {
+      const isSilent = auth.profile.prefersSilentService;
+      const timer = setTimeout(() => {
+        setSilentService(isSilent);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [auth.profile?.prefersSilentService]);
+  useEffect(() => {
+    if (partySize > maxSimultaneous && groupMode === 'simultaneous') {
+      const timer = setTimeout(() => {
+        setGroupMode('consecutive');
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [groupMode, maxSimultaneous, partySize]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setGroupServicesMap((prev) => {
+        const next: Record<number, string[]> = {};
+        const base = prev[0] && prev[0].length > 0 ? prev[0] : ['cut'];
+        for (let i = 0; i < partySize; i++) {
+          next[i] = prev[i] && prev[i].length > 0 ? prev[i] : base;
+        }
+        return next;
+      });
+      if (activePersonIndex >= partySize) {
+        setActivePersonIndex(0);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [activePersonIndex, partySize]);
+
+  const initialServiceIds = useMemo(() => {
+    if (!incomingServiceParam) return ['cut'];
+    const list = incomingServiceParam.split(',').filter(Boolean);
+    const valid = list.filter((id) => services.some((s) => s.id === id));
+    return valid.length > 0 ? valid : ['cut'];
+  }, [incomingServiceParam]);
+
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(initialServiceIds);
+
+  function toggleService(id: string) {
+    setTime(undefined);
+    setSelectedServiceIds((prev) => {
+      let next: string[];
+      if (prev.includes(id)) {
+        next = prev.filter((item) => item !== id);
+        if (next.length === 0) next = [id];
+      } else {
+        next = [...prev, id];
+      }
+      router.setParams({ service: next.join(',') });
+      return next;
+    });
+    Haptics.selectionAsync().catch(() => undefined);
+  }
+
+  function toggleServiceForPerson(serviceId: string) {
+    setTime(undefined);
+    if (partySize === 1 || sameServiceForGroup) {
+      toggleService(serviceId);
+      setGroupServicesMap((prev) => {
+        let current = prev[0] || ['cut'];
+        if (current.includes(serviceId)) {
+          current = current.filter((id) => id !== serviceId);
+          if (current.length === 0) current = [serviceId];
+        } else {
+          current = [...current, serviceId];
+        }
+        const nextMap: Record<number, string[]> = {};
+        for (let i = 0; i < partySize; i++) {
+          nextMap[i] = current;
+        }
+        return nextMap;
+      });
+    } else {
+      setGroupServicesMap((prev) => {
+        let current = prev[activePersonIndex] || ['cut'];
+        if (current.includes(serviceId)) {
+          current = current.filter((id) => id !== serviceId);
+          if (current.length === 0) current = [serviceId];
+        } else {
+          current = [...current, serviceId];
+        }
+        return { ...prev, [activePersonIndex]: current };
+      });
+      Haptics.selectionAsync().catch(() => undefined);
+    }
+  }
+
+  const selectedServices = useMemo(
+    () => services.filter((s) => selectedServiceIds.includes(s.id)),
+    [selectedServiceIds],
+  );
+
+  const groupCalculations = useMemo(() => {
+    if (partySize === 1 || sameServiceForGroup) {
+      const sList = services.filter((s) => selectedServiceIds.includes(s.id));
+      const name = sList.map((s) => s.name).join(' + ') || 'Serviço';
+      const durPerPerson = sList.reduce((sum, s) => sum + s.duration, 0);
+      const pricePerPerson = sList.reduce((sum, s) => sum + s.price, 0);
+      return {
+        name,
+        totalDuration: groupMode === 'consecutive' ? durPerPerson * partySize : durPerPerson,
+        totalPrice: pricePerPerson * partySize,
+        primaryServiceId: selectedServiceIds[0] || 'cut',
+      };
+    }
+
+    let sumDuration = 0;
+    let maxDurationInGroup = 0;
+    let sumPrice = 0;
+    const namesList: string[] = [];
+
+    for (let i = 0; i < partySize; i++) {
+      const pIds = groupServicesMap[i] || ['cut'];
+      const pServices = services.filter((s) => pIds.includes(s.id));
+      const pDur = pServices.reduce((sum, s) => sum + s.duration, 0);
+      const pPrice = pServices.reduce((sum, s) => sum + s.price, 0);
+      const pNames = pServices.map((s) => s.name).join(' + ');
+
+      sumDuration += pDur;
+      maxDurationInGroup = Math.max(maxDurationInGroup, pDur);
+      sumPrice += pPrice;
+      namesList.push(`P${i + 1}: ${pNames}`);
+    }
+
+    const firstPersonIds = groupServicesMap[0] || ['cut'];
+
+    return {
+      name: namesList.join(' · '),
+      totalDuration: groupMode === 'consecutive' ? sumDuration : maxDurationInGroup,
+      totalPrice: sumPrice,
+      primaryServiceId: firstPersonIds[0] || 'cut',
+    };
+  }, [groupMode, groupServicesMap, partySize, sameServiceForGroup, selectedServiceIds]);
+
+  const primaryServiceId = groupCalculations.primaryServiceId;
+  const combinedServiceName = groupCalculations.name;
+  const combinedDuration = groupCalculations.totalDuration;
+  const combinedPrice = groupCalculations.totalPrice;
+
   const barberId = barbers.some((item) => item.id === incomingBarber) ? incomingBarber : undefined;
 
-  const selectedService = services.find((service) => service.id === serviceId);
   const selectedBarber = barbers.find((barber) => barber.id === barberId);
-  const canConfirm = Boolean(serviceId && barberId && date && time && !submitting);
-  const subtotal = (selectedService?.price ?? 0) * partySize;
+  const canConfirm = Boolean(selectedServiceIds.length > 0 && barberId && date && time && !submitting);
+  const subtotal = combinedPrice;
   const gratuity = Math.round(subtotal * tipPercent) / 100;
   const total = subtotal + gratuity;
 
   useEffect(() => {
     async function loadSlots() {
-      if (!supabase || !serviceId || !barberId || !date) {
-        setAvailableTimes(timeSlots);
+      const totalNeededMinutes = combinedDuration;
+
+      if (partySize > 1 && groupMode === 'simultaneous') {
+        const targetServiceSlug = selectedServiceIds.length > 1 && combinedDuration >= 75 ? 'combo' : primaryServiceId;
+        setSlotsLoading(true);
+        const client = supabase;
+        if (client && date) {
+          const barberSlotsPromises = activeBarbersList.map(async (b) => {
+            const { data } = await client.rpc('get_available_slots', {
+              p_unit_slug: 'betim',
+              p_service_slug: targetServiceSlug,
+              p_day: date,
+              p_barber_slug: b.id,
+              p_party_size: 1,
+            });
+            const times: string[] = (data ?? []).map((slot: Record<string, unknown>) => new Intl.DateTimeFormat('pt-BR', {
+              timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+            }).format(new Date(String(slot.starts_at))));
+            return filterSlotsForDuration(Array.from(new Set(times)), combinedDuration);
+          });
+          const allBarberSlots = await Promise.all(barberSlotsPromises);
+          const counts: Record<string, number> = {};
+          for (const bSlots of allBarberSlots) {
+            for (const t of bSlots) {
+              counts[t] = (counts[t] || 0) + 1;
+            }
+          }
+          const simultaneousTimes = Object.keys(counts).filter((t) => counts[t] >= partySize).sort();
+          setAvailableTimes(simultaneousTimes);
+        } else {
+          const filteredOffline = filterSlotsForDuration(timeSlots, combinedDuration);
+          setAvailableTimes(filteredOffline);
+        }
+        setSlotsLoading(false);
+        return;
+      }
+
+      if (!supabase || !primaryServiceId || !barberId || !date) {
+        setAvailableTimes(filterSlotsForDuration(timeSlots, totalNeededMinutes));
         return;
       }
       setSlotsLoading(true);
+      const targetServiceSlug = selectedServiceIds.length > 1 && combinedDuration >= 75 ? 'combo' : primaryServiceId;
       const { data, error } = await supabase.rpc('get_available_slots', {
         p_unit_slug: 'betim',
-        p_service_slug: serviceId,
+        p_service_slug: targetServiceSlug,
         p_day: date,
         p_barber_slug: barberId,
         p_party_size: partySize,
@@ -72,17 +292,21 @@ export default function BookingScreen() {
         const times: string[] = (data ?? []).map((slot: Record<string, unknown>) => new Intl.DateTimeFormat('pt-BR', {
           timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
         }).format(new Date(String(slot.starts_at))));
-        setAvailableTimes(Array.from(new Set(times)));
+        const uniqueTimes = Array.from(new Set(times));
+        setAvailableTimes(filterSlotsForDuration(uniqueTimes, totalNeededMinutes));
+      } else {
+        setAvailableTimes(filterSlotsForDuration(timeSlots, totalNeededMinutes));
       }
       setSlotsLoading(false);
     }
     loadSlots();
-  }, [barberId, date, partySize, serviceId]);
+  }, [activeBarbersList, barberId, combinedDuration, date, groupMode, partySize, primaryServiceId, selectedServiceIds.length]);
 
   useEffect(() => {
-    if (!serviceId || !supabase) return;
+    if (!primaryServiceId || !supabase) return;
     let active = true;
-    Promise.all(barbers.map(async (barber) => [barber.id, await getNextAvailableSlot(serviceId, barber.id, partySize)] as const))
+    const targetServiceSlug = selectedServiceIds.length > 1 && combinedDuration >= 75 ? 'combo' : primaryServiceId;
+    Promise.all(barbers.map(async (barber) => [barber.id, await getNextAvailableSlot(targetServiceSlug, barber.id, partySize)] as const))
       .then((results) => {
         if (active) setNextSlots(Object.fromEntries(results));
       })
@@ -90,7 +314,7 @@ export default function BookingScreen() {
         if (active) setNextSlots({});
       });
     return () => { active = false; };
-  }, [partySize, serviceId]);
+  }, [combinedDuration, partySize, primaryServiceId, selectedServiceIds.length]);
 
   function select(setter: (value: string) => void, value: string) {
     setter(value);
@@ -98,7 +322,7 @@ export default function BookingScreen() {
   }
 
   async function confirm() {
-    if (!serviceId || !barberId || !date || !time) return;
+    if (selectedServiceIds.length === 0 || !barberId || !date || !time) return;
     if (isSupabaseConfigured && !user) {
       router.push({ pathname: '/login', params: { returnTo: '/book' } });
       return;
@@ -106,7 +330,16 @@ export default function BookingScreen() {
     setSubmitting(true);
     setSubmitError(undefined);
     try {
-      await addBooking({ serviceId, barberId, date, time, partySize, gratuityCents: Math.round(gratuity * 100), unitPriceCents: selectedService?.price ? selectedService.price * 100 : 0, paymentStatus: 'pending', pixKey: PIX_KEY });
+      await addBooking({ serviceId: primaryServiceId, barberId, date, time, partySize, gratuityCents: Math.round(gratuity * 100), unitPriceCents: Math.round(combinedPrice * 100), paymentStatus: 'pending', pixKey: PIX_KEY });
+      if (user || !isSupabaseConfigured) {
+        let barberUuid: string | null = barberId;
+        if (supabase && barberId) {
+          const { data: bData } = await supabase.from('barbers').select('id').eq('slug', barberId).maybeSingle();
+          if (bData?.id) barberUuid = bData.id;
+        }
+        auth.updateProfile({ preferredBarberId: barberUuid, prefersSilentService: silentService }).catch(() => undefined);
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       setConfirmed(true);
     } catch (error) {
@@ -127,7 +360,7 @@ export default function BookingScreen() {
     router.replace(destination);
   }
 
-  if (confirmed && selectedService && selectedBarber && date && time) {
+  if (confirmed && selectedServices.length > 0 && selectedBarber && date && time) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.centeredContent}>
         <SafeAreaView style={styles.successWrap}>
@@ -139,9 +372,11 @@ export default function BookingScreen() {
             <Text style={styles.summaryLabel}>SEU AGENDAMENTO</Text>
             <Text style={styles.summaryDate}>{formatBookingDate(date)}</Text>
             <Text style={styles.summaryTime}>{time}</Text>
-            <View style={styles.summaryLine}><Text style={styles.summaryKey}>SERVIÇO</Text><Text style={styles.summaryValue}>{selectedService.name}</Text></View>
+            <View style={styles.summaryLine}><Text style={styles.summaryKey}>SERVIÇO</Text><Text style={styles.summaryValue}>{combinedServiceName}</Text></View>
             <View style={styles.summaryLine}><Text style={styles.summaryKey}>PROFISSIONAL</Text><Text style={styles.summaryValue}>{selectedBarber.name}</Text></View>
             <View style={styles.summaryLine}><Text style={styles.summaryKey}>GRUPO</Text><Text style={styles.summaryValue}>{partySize} {partySize === 1 ? 'pessoa' : 'pessoas'}</Text></View>
+            {partySize > 1 ? <View style={styles.summaryLine}><Text style={styles.summaryKey}>MODO GRUPO</Text><Text style={styles.summaryValue}>{groupMode === 'consecutive' ? 'Consecutivo' : 'Simultâneo'}</Text></View> : null}
+            {silentService ? <View style={styles.summaryLine}><Text style={styles.summaryKey}>ATENDIMENTO</Text><Text style={styles.summaryValue}>Silencioso 🔇</Text></View> : null}
             {gratuity > 0 ? <View style={styles.summaryLine}><Text style={styles.summaryKey}>GORJETA</Text><Text style={styles.summaryValue}>{formatCurrency(gratuity)}</Text></View> : null}
             <View style={styles.summaryLine}><Text style={styles.summaryKey}>TOTAL</Text><Text style={styles.summaryValue}>{formatCurrency(total)}</Text></View>
             {partySize > 1 ? <View style={styles.summaryLine}><Text style={styles.summaryKey}>DIVISÃO SUGERIDA</Text><Text style={styles.summaryValue}>{formatCurrency(total / partySize)} por pessoa</Text></View> : null}
@@ -175,7 +410,7 @@ export default function BookingScreen() {
         </View>
 
         <View style={styles.progress}>
-          {[Boolean(serviceId), partySize > 0, Boolean(barberId), Boolean(date), Boolean(time)].map((done, index) => (
+          {[selectedServiceIds.length > 0, partySize > 0, Boolean(barberId), Boolean(date), Boolean(time)].map((done, index) => (
             <View key={index} style={[styles.progressBar, done && styles.progressDone]} />
           ))}
         </View>
@@ -184,15 +419,57 @@ export default function BookingScreen() {
         <View style={styles.choicesColumn}>
         <View style={[styles.section, isWide && styles.sectionWide]}>
           <View style={styles.sectionHeading}><Text style={styles.step}>01</Text><Text style={styles.sectionTitle}>O que vamos fazer?</Text></View>
+
+          {partySize > 1 ? (
+            <View style={styles.groupServiceModeWrap}>
+              <View style={styles.groupServiceToggleRow}>
+                <Pressable
+                  onPress={() => { setTime(undefined); setSameServiceForGroup(true); }}
+                  style={[styles.groupServiceToggleChip, sameServiceForGroup && styles.groupServiceToggleChipActive]}
+                >
+                  <Text style={[styles.groupServiceToggleText, sameServiceForGroup && styles.selectedText]}>Mesmo serviço para todos</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => { setTime(undefined); setSameServiceForGroup(false); }}
+                  style={[styles.groupServiceToggleChip, !sameServiceForGroup && styles.groupServiceToggleChipActive]}
+                >
+                  <Text style={[styles.groupServiceToggleText, !sameServiceForGroup && styles.selectedText]}>Serviços individuais</Text>
+                </Pressable>
+              </View>
+
+              {!sameServiceForGroup ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.personTabsRow}>
+                  {Array.from({ length: partySize }).map((_, idx) => {
+                    const active = idx === activePersonIndex;
+                    const pIds = groupServicesMap[idx] || ['cut'];
+                    const pServices = services.filter((s) => pIds.includes(s.id));
+                    const label = pServices.map((s) => s.shortName).join('+');
+                    return (
+                      <Pressable
+                        key={idx}
+                        onPress={() => setActivePersonIndex(idx)}
+                        style={[styles.personTab, active && styles.personTabActive]}
+                      >
+                        <Text style={[styles.personTabTitle, active && styles.selectedText]}>Pessoa {idx + 1}</Text>
+                        <Text style={[styles.personTabSub, active && styles.selectedMuted]}>{label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+            </View>
+          ) : null}
+
           <View style={[styles.serviceList, isWide && styles.serviceListWide]}>
             {services.map((service) => {
-              const selected = service.id === serviceId;
+              const activePersonIds = groupServicesMap[activePersonIndex] || ['cut'];
+              const selected = partySize === 1 || sameServiceForGroup ? selectedServiceIds.includes(service.id) : activePersonIds.includes(service.id);
               return (
                 <Pressable
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
                   key={service.id}
-                  onPress={() => { setTime(undefined); select((value) => router.setParams({ service: value }), service.id); }}
+                  onPress={() => toggleServiceForPerson(service.id)}
                   style={({ pressed }) => [styles.serviceCard, selected && styles.selectedCard, pressed && styles.pressed]}>
                   <View style={styles.choiceTop}>
                     <Text style={[styles.choiceName, selected && styles.selectedText]}>{service.name}</Text>
@@ -211,8 +488,48 @@ export default function BookingScreen() {
 
         <View style={[styles.section, isWide && styles.sectionWide]}>
           <View style={styles.sectionHeading}><Text style={styles.step}>02</Text><Text style={styles.sectionTitle}>Para quantas pessoas?</Text></View>
-          <Text style={styles.sectionHint}>O grupo usa a mesma cadeira em horários consecutivos.</Text>
+          <Text style={styles.sectionHint}>
+            {partySize === 1 ? 'Atendimento individual.' : groupMode === 'consecutive' ? 'O grupo usa a mesma cadeira em horários consecutivos.' : `Atendimento simultâneo por ${partySize} barbeiros no mesmo horário.`}
+          </Text>
           <View style={styles.partyGrid}>{partyOptions.map((size) => <Pressable key={size} accessibilityRole="radio" accessibilityState={{ selected: partySize === size }} onPress={() => { setTime(undefined); setPartySize(size); }} style={[styles.partyChip, partySize === size && styles.partyChipActive]}><Text style={[styles.partyNumber, partySize === size && styles.selectedText]}>{size}</Text><Text style={[styles.partyLabel, partySize === size && styles.selectedMuted]}>{size === 1 ? 'PESSOA' : 'PESSOAS'}</Text></Pressable>)}</View>
+
+          {partySize > 1 ? (
+            <View style={styles.groupModeWrap}>
+              <Text style={styles.groupModeHint}>COMO DESEJA O ATENDIMENTO DO GRUPO?</Text>
+              <View style={styles.groupModeGrid}>
+                <Pressable
+                  onPress={() => { setTime(undefined); setGroupMode('consecutive'); }}
+                  style={[styles.groupModeChip, groupMode === 'consecutive' && styles.groupModeChipActive]}
+                >
+                  <Ionicons name="time-outline" color={groupMode === 'consecutive' ? colors.white : colors.ink} size={16} />
+                  <View style={styles.groupModeCopy}>
+                    <Text style={[styles.groupModeTitle, groupMode === 'consecutive' && styles.selectedText]}>CONSECUTIVO</Text>
+                    <Text style={[styles.groupModeSub, groupMode === 'consecutive' && styles.selectedMuted]}>Mesma cadeira em horários seguidos</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  disabled={partySize > maxSimultaneous}
+                  onPress={() => { setTime(undefined); setGroupMode('simultaneous'); }}
+                  style={[
+                    styles.groupModeChip,
+                    groupMode === 'simultaneous' && styles.groupModeChipActive,
+                    partySize > maxSimultaneous && styles.groupModeDisabled,
+                  ]}
+                >
+                  <Ionicons name="people-outline" color={partySize > maxSimultaneous ? colors.muted : groupMode === 'simultaneous' ? colors.white : colors.ink} size={16} />
+                  <View style={styles.groupModeCopy}>
+                    <Text style={[styles.groupModeTitle, groupMode === 'simultaneous' && styles.selectedText, partySize > maxSimultaneous && styles.disabledText]}>
+                      SIMULTÂNEO {partySize > maxSimultaneous ? '(INDISPONÍVEL)' : ''}
+                    </Text>
+                    <Text style={[styles.groupModeSub, groupMode === 'simultaneous' && styles.selectedMuted, partySize > maxSimultaneous && styles.disabledText]}>
+                      {partySize > maxSimultaneous ? `Máximo de ${maxSimultaneous} barbeiros simultâneos` : 'Barbeiros diferentes no mesmo horário'}
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
         </View>
 
         <View style={[styles.section, isWide && styles.sectionWide]}>
@@ -235,7 +552,7 @@ export default function BookingScreen() {
                   </View>
                   <View style={styles.barberAvailability}>
                     <Text style={styles.availableLabel}>PRÓXIMO</Text>
-                    <Text style={styles.availableText}>{!serviceId ? 'Escolha o serviço' : nextSlots[barber.id] === undefined ? 'Buscando…' : nextSlots[barber.id]?.display ?? 'Sem encaixe'}</Text>
+                    <Text style={styles.availableText}>{selectedServiceIds.length === 0 ? 'Escolha o serviço' : nextSlots[barber.id] === undefined ? 'Buscando…' : nextSlots[barber.id]?.display ?? 'Sem encaixe'}</Text>
                   </View>
                 </Pressable>
               );
@@ -279,20 +596,32 @@ export default function BookingScreen() {
           <View style={styles.sectionHeading}><Text style={styles.step}>06</Text><Text style={styles.sectionTitle}>Quer deixar gorjeta?</Text></View>
           <Text style={styles.sectionHint}>Opcional. O valor entra no total e na divisão do grupo.</Text>
           <View style={styles.tipGrid}>{tipOptions.map((percent) => <Pressable key={percent} accessibilityRole="radio" accessibilityState={{ selected: tipPercent === percent }} onPress={() => setTipPercent(percent)} style={[styles.tipChip, tipPercent === percent && styles.tipChipActive]}><Text style={[styles.tipChipText, tipPercent === percent && styles.selectedText]}>{percent === 0 ? 'SEM GORJETA' : `${percent}%`}</Text></Pressable>)}</View>
+          <Pressable onPress={() => setSilentService(!silentService)} style={styles.smallSilentOption}>
+            <Ionicons name="volume-mute-outline" color={silentService ? colors.blue : colors.muted} size={16} />
+            <Text style={[styles.smallSilentText, silentService && styles.selectedText]}>Prefiro atendimento em silêncio</Text>
+            <Switch
+              accessibilityLabel="Prefiro atendimento em silêncio"
+              value={silentService}
+              onValueChange={setSilentService}
+              trackColor={{ false: colors.line, true: colors.blue }}
+              thumbColor={colors.white}
+              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+            />
+          </Pressable>
         </View>
 
         </View>
         <View style={[styles.checkout, isWide && styles.checkoutWide]}>
           <View style={styles.checkoutCopy}>
             <Text style={styles.checkoutLabel}>{canConfirm ? 'TUDO CERTO' : 'FALTA POUCO'}</Text>
-            <Text style={styles.checkoutTitle}>{selectedService?.name ?? 'Escolha seu serviço'}</Text>
-            {selectedService ? <Text style={styles.checkoutMeta}>{selectedService.duration * partySize} min de serviço · {partySize} {partySize === 1 ? 'pessoa' : 'pessoas'}</Text> : null}
+            <Text style={styles.checkoutTitle}>{combinedServiceName}</Text>
+            {selectedServiceIds.length > 0 ? <Text style={styles.checkoutMeta}>{combinedDuration * partySize} min de serviço · {partySize} {partySize === 1 ? 'pessoa' : 'pessoas'}</Text> : null}
             {submitError ? <Text style={styles.checkoutError}>{submitError}</Text> : null}
             {isWide ? <View style={styles.checkoutDetails}>
               <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>PROFISSIONAL</Text><Text style={styles.checkoutValue}>{selectedBarber?.name ?? '—'}</Text></View>
               <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>DATA</Text><Text style={styles.checkoutValue}>{date ? formatBookingDate(date) : '—'}</Text></View>
               <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>HORÁRIO</Text><Text style={styles.checkoutValue}>{time ?? '—'}</Text></View>
-              <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>TOTAL</Text><Text style={styles.checkoutValue}>{selectedService ? formatCurrency(total) : '—'}</Text></View>
+              <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>TOTAL</Text><Text style={styles.checkoutValue}>{selectedServiceIds.length > 0 ? formatCurrency(total) : '—'}</Text></View>
               {partySize > 1 ? <View style={styles.checkoutDetail}><Text style={styles.checkoutKey}>POR PESSOA</Text><Text style={styles.checkoutValue}>{formatCurrency(total / partySize)}</Text></View> : null}
             </View> : null}
           </View>
@@ -311,7 +640,7 @@ export default function BookingScreen() {
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Confirmar ${selectedService?.name} às ${time}`}
+          accessibilityLabel={`Confirmar ${combinedServiceName} às ${time}`}
           disabled={submitting}
           onPress={confirm}
           style={({ pressed }) => [styles.mobileDockButton, pressed && styles.pressed]}>
@@ -366,8 +695,18 @@ const styles = StyleSheet.create({
   partyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   partyChip: { minWidth: 94, minHeight: 68, paddingHorizontal: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   partyChipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
-  partyNumber: { color: colors.ink, fontFamily: fonts.sans, fontSize: 22, fontWeight: '900' },
-  partyLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 7, fontWeight: '800', letterSpacing: 0.7, marginTop: 3 },
+  partyNumber: { color: colors.ink, fontFamily: fonts.sans, fontSize: 20, fontWeight: '800' },
+  partyLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 0.8, marginTop: 4 },
+  groupModeWrap: { marginTop: 20 },
+  groupModeHint: { color: colors.blue, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 0.9, marginBottom: 10 },
+  groupModeGrid: { gap: 10 },
+  groupModeChip: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  groupModeChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
+  groupModeDisabled: { backgroundColor: colors.paper, opacity: 0.5 },
+  groupModeCopy: { flex: 1 },
+  groupModeTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: '800' },
+  groupModeSub: { color: colors.muted, fontFamily: fonts.sans, fontSize: 10, marginTop: 2 },
+  disabledText: { color: colors.muted },
   barberList: { gap: 9 },
   barberCard: { minHeight: 106, flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, gap: 13 },
   selectedBarber: { borderColor: colors.blue, borderWidth: 2, padding: 13 },
@@ -401,12 +740,24 @@ const styles = StyleSheet.create({
   tipChip: { minWidth: 100, height: 48, paddingHorizontal: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   tipChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
   tipChipText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  smallSilentOption: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line },
+  smallSilentText: { flex: 1, color: colors.muted, fontFamily: fonts.sans, fontSize: 11, fontWeight: '700' },
   checkout: { marginHorizontal: layout.pagePadding, marginTop: 58, padding: 18, backgroundColor: colors.ink, flexDirection: 'row', alignItems: 'center', gap: 12 },
   checkoutWide: { width: 300, marginHorizontal: 0, marginTop: 54, padding: 22, flexDirection: 'column', alignItems: 'stretch' },
   checkoutCopy: { flex: 1 },
   checkoutLabel: { color: colors.blue, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 1.1 },
   checkoutTitle: { color: colors.white, fontFamily: fonts.sans, fontSize: 17, fontWeight: '800', marginTop: 5 },
   checkoutMeta: { color: '#A8A9AE', fontFamily: fonts.sans, fontSize: 10, marginTop: 3 },
+  groupServiceModeWrap: { marginBottom: 16 },
+  groupServiceToggleRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  groupServiceToggleChip: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center' },
+  groupServiceToggleChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
+  groupServiceToggleText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 11, fontWeight: '800' },
+  personTabsRow: { gap: 8, paddingVertical: 4 },
+  personTab: { paddingVertical: 8, paddingHorizontal: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  personTabActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  personTabTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 12, fontWeight: '800' },
+  personTabSub: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, marginTop: 2 },
   checkoutError: { color: '#FF8C82', fontFamily: fonts.sans, fontSize: 9, lineHeight: 13, marginTop: 8 },
   checkoutDetails: { marginTop: 24, borderTopWidth: 1, borderTopColor: '#393A3E' },
   checkoutDetail: { minHeight: 54, borderBottomWidth: 1, borderBottomColor: '#393A3E', justifyContent: 'center' },

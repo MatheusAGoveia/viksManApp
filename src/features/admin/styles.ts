@@ -175,4 +175,6 @@ export const styles = StyleSheet.create({
   calendarDayTextDisabled: { color: colors.muted },
   calendarCloseBtn: { marginTop: 16, height: 42, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   calendarCloseBtnText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  silentBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  silentBadgeText: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
 });

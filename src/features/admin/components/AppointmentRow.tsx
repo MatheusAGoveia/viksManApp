@@ -34,7 +34,15 @@ export function AppointmentRow({ item, onPaid, onReschedule, onStatus }: Appoint
       </View>
       <View style={styles.appointmentCopy}>
         <View style={styles.appointmentTop}>
-          <Text style={styles.appointmentClient}>{item.clientName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Text style={styles.appointmentClient}>{item.clientName}</Text>
+            {item.prefersSilentService ? (
+              <View style={styles.silentBadge}>
+                <Ionicons name="volume-mute-outline" color={colors.muted} size={11} />
+                <Text style={styles.silentBadgeText}>SILENCIOSO</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.appointmentStatus}>{statusLabel[item.status] ?? item.status.toUpperCase()}</Text>
         </View>
         <Text style={styles.appointmentMeta}>

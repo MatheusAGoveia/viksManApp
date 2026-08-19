@@ -1,15 +1,19 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, fonts, layout } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useBookings } from '@/context/booking-context';
+import { barbers as catalogBarbers } from '@/data/catalog';
 import { registerPushNotifications } from '@/lib/notifications';
+import { supabase } from '@/lib/supabase';
 
 type Feedback = { kind: 'error' | 'success'; text: string } | null;
+
+type BarberOption = { id: string; name: string };
 
 export default function ProfileScreen() {
   const auth = useAuth();
@@ -21,13 +25,44 @@ export default function ProfileScreen() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [whatsappOverride, setWhatsappOverride] = useState<boolean>();
   const [marketingOverride, setMarketingOverride] = useState<boolean>();
+  const [preferredBarberOverride, setPreferredBarberOverride] = useState<string | null | undefined>();
+  const [silentServiceOverride, setSilentServiceOverride] = useState<boolean>();
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [busy, setBusy] = useState(false);
+  const [availableBarbers, setAvailableBarbers] = useState<BarberOption[]>([]);
 
   const displayName = auth.profile?.fullName || auth.user?.email?.split('@')[0] || 'Visitante';
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'VM';
   const whatsappEnabled = whatsappOverride ?? auth.profile?.whatsappConsent ?? false;
   const marketingEnabled = marketingOverride ?? auth.profile?.marketingConsent ?? false;
+  const currentPreferredBarberId = preferredBarberOverride !== undefined ? preferredBarberOverride : (auth.profile?.preferredBarberId ?? null);
+  const silentServiceEnabled = silentServiceOverride ?? auth.profile?.prefersSilentService ?? false;
+
+  useEffect(() => {
+    if (supabase) {
+      supabase
+        .from('barbers')
+        .select('id, name')
+        .eq('active', true)
+        .order('sort_order')
+        .then(({ data, error }) => {
+          if (!error && data && data.length > 0) {
+            setAvailableBarbers(data);
+          } else {
+            setAvailableBarbers(
+              catalogBarbers.filter((b) => b.id !== 'first').map((b) => ({ id: b.id, name: b.name })),
+            );
+          }
+        });
+    } else {
+      const timer = setTimeout(() => {
+        setAvailableBarbers(
+          catalogBarbers.filter((b) => b.id !== 'first').map((b) => ({ id: b.id, name: b.name })),
+        );
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   function beginEdit() {
     setFullName(auth.profile?.fullName ?? '');
@@ -47,19 +82,21 @@ export default function ProfileScreen() {
   }
 
   async function togglePush(next: boolean) {
-    if (!auth.user) {
+    if (!auth.user && auth.configured) {
       router.push('/login');
       return;
     }
     if (!next) return setPushEnabled(false);
-    const result = await registerPushNotifications(auth.user.id);
-    if (result.error) return setFeedback({ kind: 'error', text: result.error });
+    if (auth.user) {
+      const result = await registerPushNotifications(auth.user.id);
+      if (result.error) return setFeedback({ kind: 'error', text: result.error });
+    }
     setPushEnabled(true);
     setFeedback({ kind: 'success', text: 'Notificações ativadas neste dispositivo.' });
   }
 
   async function toggleWhatsApp(next: boolean) {
-    if (!auth.user) {
+    if (!auth.user && auth.configured) {
       router.push('/login');
       return;
     }
@@ -72,10 +109,43 @@ export default function ProfileScreen() {
   }
 
   async function toggleMarketing(next: boolean) {
-    if (!auth.user) { router.push('/login'); return; }
+    if (!auth.user && auth.configured) { router.push('/login'); return; }
     setMarketingOverride(next);
     const result = await auth.updateProfile({ marketingConsent: next });
     if (result.error) { setMarketingOverride(!next); setFeedback({ kind: 'error', text: result.error }); }
+  }
+
+  async function selectPreferredBarber(barberId: string | null) {
+    if (!auth.user && auth.configured) {
+      router.push('/login');
+      return;
+    }
+    setPreferredBarberOverride(barberId);
+    const result = await auth.updateProfile({ preferredBarberId: barberId });
+    if (result.error) {
+      setPreferredBarberOverride(auth.profile?.preferredBarberId ?? null);
+      setFeedback({ kind: 'error', text: result.error });
+    } else {
+      setFeedback({ kind: 'success', text: 'Barbeiro preferido atualizado.' });
+    }
+  }
+
+  async function toggleSilentService(next: boolean) {
+    if (!auth.user && auth.configured) {
+      router.push('/login');
+      return;
+    }
+    setSilentServiceOverride(next);
+    const result = await auth.updateProfile({ prefersSilentService: next });
+    if (result.error) {
+      setSilentServiceOverride(!next);
+      setFeedback({ kind: 'error', text: result.error });
+    } else {
+      setFeedback({
+        kind: 'success',
+        text: next ? 'Atendimento silencioso ativado.' : 'Atendimento silencioso desativado.',
+      });
+    }
   }
 
   function confirmDelete() {
@@ -140,6 +210,44 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <SectionTitle index={editing ? '03' : '02'} title="ATENDIMENTO" />
           <View style={styles.listCard}>
+            <View style={styles.prefHeaderRow}>
+              <View style={styles.rowIcon}><Ionicons name="person-outline" color={colors.ink} size={19} /></View>
+              <View style={styles.rowCopy}>
+                <Text style={styles.rowTitle}>Barbeiro preferido</Text>
+                <Text style={styles.rowHint}>Seleção inicial preferencial no agendamento</Text>
+              </View>
+            </View>
+
+            <View style={styles.barberChipsContainer}>
+              <Pressable
+                onPress={() => selectPreferredBarber(null)}
+                style={[styles.barberChip, !currentPreferredBarberId && styles.barberChipSelected]}
+              >
+                <Text style={[styles.barberChipText, !currentPreferredBarberId && styles.barberChipTextSelected]}>
+                  Sem preferência
+                </Text>
+              </Pressable>
+              {availableBarbers.map((b) => (
+                <Pressable
+                  key={b.id}
+                  onPress={() => selectPreferredBarber(b.id)}
+                  style={[styles.barberChip, currentPreferredBarberId === b.id && styles.barberChipSelected]}
+                >
+                  <Text style={[styles.barberChipText, currentPreferredBarberId === b.id && styles.barberChipTextSelected]}>
+                    {b.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <ToggleRow
+              icon="volume-mute-outline"
+              title="Prefiro atendimento em silêncio"
+              hint="Seu profissional verá essa preferência antes do atendimento."
+              value={silentServiceEnabled}
+              onValueChange={toggleSilentService}
+            />
+
             {(auth.isStaff || !auth.configured) ? <ActionRow icon="calendar-outline" title="Painel da recepção" hint={!auth.configured ? 'Abrir demonstração administrativa' : 'Agenda, clientes e bloqueios'} onPress={() => router.push('/admin')} /> : null}
             <ActionRow icon="location-outline" title="Como chegar" hint="Betim · MG" onPress={() => Linking.openURL('https://www.google.com/maps/search/?api=1&query=-19.96053886%2C-44.20162582')} />
             <ActionRow icon="logo-instagram" title="Instagram" hint="@viksbarbearia" onPress={() => Linking.openURL('https://www.instagram.com/viksbarbearia/')} />
@@ -183,6 +291,12 @@ const styles = StyleSheet.create({
   stats: { minHeight: 92, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center' }, stat: { flex: 1, alignItems: 'center' }, statNumber: { color: colors.ink, fontFamily: fonts.sans, fontSize: 25, fontWeight: '800', letterSpacing: -1.1 }, statLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 7, fontWeight: '800', letterSpacing: 0.7, marginTop: 5 }, statDivider: { width: 1, height: 38, backgroundColor: colors.line },
   feedback: { marginHorizontal: layout.pagePadding, marginTop: 18, padding: 14, backgroundColor: '#DDF5E8', borderLeftWidth: 4, borderLeftColor: colors.success }, feedbackError: { backgroundColor: '#FBE8E6', borderLeftColor: colors.danger }, feedbackText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 11, lineHeight: 16, fontWeight: '700' }, section: { paddingHorizontal: layout.pagePadding, paddingTop: 48 }, sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }, sectionTitle: { color: colors.ink, fontFamily: fonts.mono, fontSize: 9, fontWeight: '900', letterSpacing: 1.4 }, sectionIndex: { color: colors.blue, fontFamily: fonts.mono, fontSize: 9, fontWeight: '900' },
   listCard: { backgroundColor: colors.white, paddingHorizontal: 16 }, row: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: colors.line }, rowIcon: { width: 40, height: 40, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center' }, rowCopy: { flex: 1 }, rowTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 13, fontWeight: '800' }, rowHint: { color: colors.muted, fontFamily: fonts.sans, fontSize: 10, lineHeight: 14, marginTop: 3 },
+  prefHeaderRow: { paddingTop: 18, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  barberChipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: colors.line },
+  barberChip: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  barberChipSelected: { backgroundColor: colors.blue, borderColor: colors.blue },
+  barberChipText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 11, fontWeight: '700' },
+  barberChipTextSelected: { color: colors.white },
   formCard: { backgroundColor: colors.white, padding: 18, gap: 16 }, field: { gap: 7 }, fieldLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 1 }, input: { height: 50, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, color: colors.ink, fontFamily: fonts.sans, fontSize: 14 }, formActions: { flexDirection: 'row', gap: 8, marginTop: 4 }, secondaryButton: { flex: 1, height: 48, borderWidth: 1, borderColor: colors.ink, alignItems: 'center', justifyContent: 'center' }, secondaryText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 9, fontWeight: '800', letterSpacing: 1 }, primaryButton: { flex: 1, height: 48, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' }, primaryText: { color: colors.white, fontFamily: fonts.sans, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   accountCard: { padding: 18, backgroundColor: colors.white }, accountText: { color: colors.muted, fontFamily: fonts.sans, fontSize: 11, lineHeight: 17 }, outlineButton: { height: 46, marginTop: 16, borderWidth: 1, borderColor: colors.ink, alignItems: 'center', justifyContent: 'center' }, outlineText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 1 }, dangerButton: { minHeight: 44, marginTop: 8, alignItems: 'center', justifyContent: 'center' }, dangerText: { color: colors.danger, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 1 }, version: { color: colors.muted, fontFamily: fonts.mono, fontSize: 7, letterSpacing: 1, textAlign: 'center', marginTop: 36 }, pressed: { opacity: 0.66 },
 });
