@@ -13,6 +13,7 @@ type AppointmentRowProps = {
   onReschedule: () => void;
   onStatus: (status: 'cancelled' | 'completed' | 'no_show') => void;
   onConsumeBenefit?: () => void;
+  onVoidBenefit?: () => void;
 };
 
 const statusLabel: Record<string, string> = {
@@ -24,8 +25,9 @@ const statusLabel: Record<string, string> = {
   no_show: 'NÃO COMPARECEU',
 };
 
-export function AppointmentRow({ item, onPaid, onReschedule, onStatus, onConsumeBenefit }: AppointmentRowProps) {
+export function AppointmentRow({ item, onPaid, onReschedule, onStatus, onConsumeBenefit, onVoidBenefit }: AppointmentRowProps) {
   const inactive = ['cancelled', 'completed', 'no_show'].includes(item.status);
+  const hasClubDiscount = Boolean(item.clubDiscountCents && item.clubDiscountCents > 0);
 
   return (
     <View style={[styles.appointment, inactive && styles.appointmentInactive]}>
@@ -43,6 +45,14 @@ export function AppointmentRow({ item, onPaid, onReschedule, onStatus, onConsume
                 <Text style={styles.silentBadgeText}>SILENCIOSO</Text>
               </View>
             ) : null}
+            {hasClubDiscount ? (
+              <View style={[styles.silentBadge, { backgroundColor: '#E3F2FD', borderColor: colors.blue }]}>
+                <Ionicons name="sparkles" color={colors.blue} size={11} />
+                <Text style={[styles.silentBadgeText, { color: colors.blue }]}>
+                  VIKS CLUB (-{formatCurrency((item.clubDiscountCents || 0) / 100)})
+                </Text>
+              </View>
+            ) : null}
           </View>
           <Text style={styles.appointmentStatus}>{statusLabel[item.status] ?? item.status.toUpperCase()}</Text>
         </View>
@@ -56,7 +66,12 @@ export function AppointmentRow({ item, onPaid, onReschedule, onStatus, onConsume
         </Text>
         {!inactive ? (
           <View style={styles.appointmentActions}>
-            {onConsumeBenefit ? (
+            {hasClubDiscount && onVoidBenefit ? (
+              <Pressable onPress={onVoidBenefit} style={[styles.paidButton, { borderColor: colors.line }]}>
+                <Ionicons name="refresh-outline" color={colors.muted} size={14} />
+                <Text style={[styles.paidText, { color: colors.ink }]}>REVERTER BENEFÍCIO</Text>
+              </Pressable>
+            ) : onConsumeBenefit ? (
               <Pressable onPress={onConsumeBenefit} style={styles.paidButton}>
                 <Ionicons name="sparkles-outline" color={colors.blue} size={14} />
                 <Text style={[styles.paidText, { color: colors.blue }]}>USAR BENEFÍCIO VIKS CLUB</Text>

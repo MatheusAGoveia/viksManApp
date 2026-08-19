@@ -21,6 +21,7 @@ import { CatalogTab } from '@/features/admin/tabs/CatalogTab';
 import { ClientsTab } from '@/features/admin/tabs/ClientsTab';
 import { MarketingTab } from '@/features/admin/tabs/MarketingTab';
 import { SettingsTab } from '@/features/admin/tabs/SettingsTab';
+import { consumeBenefit, fetchClientSubscription, voidBenefitUsage } from '@/features/viks-club/services/viks-club-service';
 import type {
   AdminAppointment,
   AdminTab,
@@ -144,7 +145,7 @@ export default function AdminScreen() {
       supabase
         .from('appointments')
         .select(
-          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, gratuity_cents, payment_status, client:profiles(full_name, prefers_silent_service), service:services(name,duration_minutes), barber:barbers(name)',
+          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, club_discount_cents, gratuity_cents, payment_status, client:profiles(full_name, prefers_silent_service), service:services(name,duration_minutes), barber:barbers(name)',
         )
         .gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00'))
         .lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00'))
@@ -174,7 +175,7 @@ export default function AdminScreen() {
       appointmentResult = await supabase
         .from('appointments')
         .select(
-          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,duration_minutes), barber:barbers(name)',
+          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, club_discount_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,duration_minutes), barber:barbers(name)',
         )
         .gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00'))
         .lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00'))
@@ -189,8 +190,11 @@ export default function AdminScreen() {
           const service = joined(row.service);
           const barber = joined(row.barber);
           const partySize = Number(row.party_size ?? 1);
-          const totalCents =
-            Number(row.unit_price_cents ?? 0) * partySize + Number(row.gratuity_cents ?? 0);
+          const clubDiscCents = Number(row.club_discount_cents ?? 0);
+          const totalCents = Math.max(
+            0,
+            Number(row.unit_price_cents ?? 0) * partySize - clubDiscCents + Number(row.gratuity_cents ?? 0)
+          );
           return {
             id: String(row.id),
             startsAt: String(row.starts_at),
@@ -204,6 +208,7 @@ export default function AdminScreen() {
             duration: Number(service?.duration_minutes ?? 45),
             partySize,
             totalCents,
+            clubDiscountCents: clubDiscCents,
             paymentStatus: String(row.payment_status ?? 'pending'),
             prefersSilentService: Boolean(client?.prefers_silent_service),
           };
@@ -797,6 +802,73 @@ export default function AdminScreen() {
     setNotice('Regras comerciais e chave PIX atualizadas.');
   }
 
+  const handleConsumeBenefit = useCallback(async (item: AdminAppointment) => {
+    setLoading(true);
+    try {
+      const sub = await fetchClientSubscription(item.clientId);
+      if (!sub || sub.status !== 'active' || !sub.benefits) {
+        setNotice('Cliente não possui assinatura ativa com benefícios.');
+        setLoading(false);
+        return;
+      }
+      const matchingBenefit = sub.benefits.find(
+        (b) => b.benefitType === 'service_credit' && b.serviceId === item.serviceId && b.quantityUsed < b.quantityGranted
+      );
+      if (!matchingBenefit) {
+        setNotice('Nenhum crédito de benefício disponível para este serviço nesta assinatura.');
+        setLoading(false);
+        return;
+      }
+      const res = await consumeBenefit(matchingBenefit.id, item.clientId, item.id, 1);
+      if (res.success) {
+        setNotice('Benefício Viks Club aplicado com sucesso no atendimento!');
+        await loadRemote();
+      } else {
+        setNotice(res.error || 'Erro ao aplicar benefício.');
+        setLoading(false);
+      }
+    } catch {
+      setNotice('Falha ao aplicar benefício.');
+      setLoading(false);
+    }
+  }, [loadRemote]);
+
+  const handleVoidBenefit = useCallback(async (item: AdminAppointment) => {
+    setLoading(true);
+    try {
+      if (!supabase) {
+        setNotice('Modo offline — estorno não executado.');
+        setLoading(false);
+        return;
+      }
+      const { data: usageData } = await supabase
+        .from('viks_club_benefit_usage')
+        .select('id')
+        .eq('appointment_id', item.id)
+        .is('voided_at', null)
+        .limit(1)
+        .maybeSingle();
+
+      if (!usageData) {
+        setNotice('Nenhum uso ativo encontrado para estorno neste atendimento.');
+        setLoading(false);
+        return;
+      }
+
+      const res = await voidBenefitUsage(usageData.id, 'Estorno manual na agenda');
+      if (res.success) {
+        setNotice('Uso do benefício Viks Club estornado com sucesso!');
+        await loadRemote();
+      } else {
+        setNotice(res.error || 'Erro ao estornar benefício.');
+        setLoading(false);
+      }
+    } catch {
+      setNotice('Falha ao estornar benefício.');
+      setLoading(false);
+    }
+  }, [loadRemote]);
+
   if (auth.configured && !auth.loading && !auth.isStaff) {
     return (
       <SafeAreaView style={styles.denied}>
@@ -856,6 +928,8 @@ export default function AdminScreen() {
                 markPaid={markPaid}
                 openReschedule={openReschedule}
                 changeStatus={changeStatus}
+                onConsumeBenefit={handleConsumeBenefit}
+                onVoidBenefit={handleVoidBenefit}
                 wide={wide}
               />
             ) : null}

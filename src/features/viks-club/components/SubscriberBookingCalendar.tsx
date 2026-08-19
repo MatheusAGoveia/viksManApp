@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -13,6 +13,7 @@ import {
 import { colors, fonts } from '@/constants/theme';
 import { Booking, useBookings } from '@/context/booking-context';
 import { barbers as catalogBarbers, services as catalogServices } from '@/data/catalog';
+import { supabase } from '@/lib/supabase';
 import type { DayOfWeek, ViksClubSubscription } from '../types';
 
 type SubscriberBookingCalendarProps = {
@@ -23,8 +24,6 @@ type SubscriberBookingCalendarProps = {
 
 const DAY_KEYS: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
-
-const TIME_SLOTS = ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
 export function SubscriberBookingCalendar({
   subscription,
@@ -44,9 +43,21 @@ export function SubscriberBookingCalendar({
   
   // Booking edit state
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [reschedulingBookingId, setReschedulingBookingId] = useState<string | null>(null);
   const [repeatWeekly, setRepeatWeekly] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [availableTimeSlots, setAvailableTimeSlots] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null);
+
+  // Services included in active subscription service_credits
+  const planServices = useMemo(() => {
+    const creditServiceIds = (subscription.benefits || [])
+      .filter((b) => b.benefitType === 'service_credit' && b.serviceId)
+      .map((b) => b.serviceId);
+    if (creditServiceIds.length === 0) return catalogServices.slice(0, 1);
+    return catalogServices.filter((srv) => creditServiceIds.includes(srv.id));
+  }, [subscription.benefits]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -115,14 +126,47 @@ export function SubscriberBookingCalendar({
     return days;
   }, [year, month, allowedDays, bookings, subscription.currentPeriodEnd]);
 
-  // Compute available time slots for selected date
-  const availableTimeSlots = useMemo(() => {
-    if (!selectedDateIso) return TIME_SLOTS;
-    const takenTimes = bookings
-      .filter((b) => b.date === selectedDateIso && b.status === 'confirmed')
-      .map((b) => b.time);
-    return TIME_SLOTS.filter((slot) => !takenTimes.includes(slot));
-  }, [selectedDateIso, bookings]);
+  // Fetch available slots from DB source of truth (get_available_slots RPC)
+  useEffect(() => {
+    if (!selectedDateIso) return;
+    const dateDay: string = selectedDateIso;
+    let active = true;
+    async function loadSlots() {
+      setSlotsLoading(true);
+      if (supabase) {
+        const targetBarber = subscription.barberId || selectedBarberId;
+        const { data, error } = await supabase.rpc('get_available_slots', {
+          p_unit_slug: 'betim',
+          p_service_slug: selectedServiceId,
+          p_day: dateDay,
+          p_barber_slug: targetBarber,
+          p_party_size: 1,
+        });
+        if (active && !error && data) {
+          const times: string[] = (data ?? []).map((slot: Record<string, unknown>) =>
+            new Intl.DateTimeFormat('pt-BR', {
+              timeZone: 'America/Sao_Paulo',
+              hour: '2-digit',
+              minute: '2-digit',
+              hourCycle: 'h23',
+            }).format(new Date(String(slot.starts_at)))
+          );
+          const uniqueTimes = Array.from(new Set(times));
+          setAvailableTimeSlots(uniqueTimes);
+          if (uniqueTimes.length > 0 && !uniqueTimes.includes(selectedTime)) {
+            setSelectedTime(uniqueTimes[0]);
+          }
+        } else if (active) {
+          setAvailableTimeSlots(['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']);
+        }
+      } else if (active) {
+        setAvailableTimeSlots(['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']);
+      }
+      if (active) setSlotsLoading(false);
+    }
+    loadSlots();
+    return () => { active = false; };
+  }, [selectedDateIso, selectedServiceId, subscription.barberId, selectedBarberId, selectedTime]);
 
   // Handle click on day cell
   function handleDayPress(day: (typeof calendarDays)[0]) {
@@ -136,7 +180,7 @@ export function SubscriberBookingCalendar({
     }
   }
 
-  // Confirm new advance booking
+  // Confirm new advance booking (or rescheduling)
   async function handleConfirmBooking() {
     if (!selectedDateIso) return;
     setBusy(true);
@@ -147,13 +191,28 @@ export function SubscriberBookingCalendar({
       const todayIso = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
       const subEndIso = subscription.currentPeriodEnd ? subscription.currentPeriodEnd.slice(0, 10) : '2099-12-31';
 
+      let totalAttempts = 1;
+      let successCount = 0;
+      let failedCount = 0;
+
       // 1. Add selected date booking
-      await addBooking({
-        serviceId: selectedServiceId,
-        barberId: targetBarber,
-        date: selectedDateIso,
-        time: selectedTime,
-      });
+      try {
+        await addBooking({
+          serviceId: selectedServiceId,
+          barberId: targetBarber,
+          date: selectedDateIso,
+          time: selectedTime,
+        });
+        successCount++;
+      } catch {
+        failedCount++;
+      }
+
+      // If this was a rescheduling operation, cancel the old booking ONLY after new one succeeds
+      if (reschedulingBookingId && successCount > 0) {
+        await cancelBooking(reschedulingBookingId).catch(() => undefined);
+        setReschedulingBookingId(null);
+      }
 
       // 2. Repeat weekly for remaining allowed weeks if enabled
       if (repeatWeekly) {
@@ -169,22 +228,30 @@ export function SubscriberBookingCalendar({
         while (curr <= endDate) {
           const iso = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}-${String(curr.getDate()).padStart(2, '0')}`;
           if (iso >= todayIso && iso <= subEndIso && allowedDays.includes(targetDayOfWeek)) {
-            await addBooking({
-              serviceId: selectedServiceId,
-              barberId: targetBarber,
-              date: iso,
-              time: selectedTime,
-            }).catch(() => undefined);
+            totalAttempts++;
+            try {
+              await addBooking({
+                serviceId: selectedServiceId,
+                barberId: targetBarber,
+                date: iso,
+                time: selectedTime,
+              });
+              successCount++;
+            } catch {
+              failedCount++;
+            }
           }
           curr.setDate(curr.getDate() + 7);
         }
       }
 
+      const msg = repeatWeekly
+        ? `${successCount} de ${totalAttempts} agendamentos realizados com sucesso${failedCount > 0 ? ` (${failedCount} data(s) indisponível(is))` : ''}.`
+        : 'Agendamento antecipado realizado com sucesso!';
+
       setFeedback({
-        kind: 'success',
-        msg: repeatWeekly
-          ? 'Agendamentos antecipados recorrentes realizados com sucesso!'
-          : 'Agendamento antecipado realizado com sucesso!',
+        kind: successCount > 0 ? 'success' : 'error',
+        msg,
       });
       setSelectedDateIso(null);
       setRepeatWeekly(false);
@@ -213,12 +280,12 @@ export function SubscriberBookingCalendar({
     }
   }
 
-  // Reschedule booking
-  async function handleRescheduleBooking() {
+  // Reschedule booking: do NOT cancel first; set rescheduling state and open booking selector
+  function handleRescheduleBooking() {
     if (!editingBooking) return;
-    const targetDate = editingBooking.date;
-    await handleCancelBooking();
-    setSelectedDateIso(targetDate);
+    setReschedulingBookingId(editingBooking.id);
+    setSelectedDateIso(editingBooking.date);
+    setEditingBooking(null);
   }
 
   function formatDatePt(iso: string) {
@@ -367,9 +434,9 @@ export function SubscriberBookingCalendar({
 
             <ScrollView contentContainerStyle={styles.modalBody}>
               {/* Service selector */}
-              <Text style={styles.fieldLabel}>SELECIONE O SERVIÇO DO PLANO</Text>
+              <Text style={styles.fieldLabel}>SERVIÇO INCLUSO NO PLANO</Text>
               <View style={styles.optionsRow}>
-                {catalogServices.slice(0, 3).map((srv) => {
+                {planServices.map((srv) => {
                   const isSel = selectedServiceId === srv.id;
                   return (
                     <Pressable
@@ -415,8 +482,15 @@ export function SubscriberBookingCalendar({
               )}
 
               {/* Time slots */}
-              <Text style={styles.fieldLabel}>HORÁRIOS DISPONÍVEIS NA DATA</Text>
-              {availableTimeSlots.length > 0 ? (
+              <Text style={styles.fieldLabel}>HORÁRIOS DISPONÍVEIS NA AGENDA VIKS</Text>
+              {slotsLoading ? (
+                <View style={{ padding: 16, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.blue} size="small" />
+                  <Text style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.muted, marginTop: 4 }}>
+                    Consultando disponibilidade da agenda...
+                  </Text>
+                </View>
+              ) : availableTimeSlots.length > 0 ? (
                 <View style={styles.timeGrid}>
                   {availableTimeSlots.map((t) => {
                     const isSel = selectedTime === t;
@@ -434,7 +508,7 @@ export function SubscriberBookingCalendar({
               ) : (
                 <View style={{ backgroundColor: colors.paper, padding: 12, borderWidth: 1, borderColor: colors.line, marginVertical: 8 }}>
                   <Text style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.muted, textAlign: 'center' }}>
-                    Todos os horários desta data já foram preenchidos.
+                    Nenhum horário disponível para a agenda deste barbeiro nesta data.
                   </Text>
                 </View>
               )}

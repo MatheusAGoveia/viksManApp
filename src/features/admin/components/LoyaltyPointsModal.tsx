@@ -10,11 +10,12 @@ type Props = {
   visible: boolean;
   clientId: string;
   clientName: string;
+  clientBalance?: number;
   onClose: () => void;
   onUpdated?: () => void;
 };
 
-export function LoyaltyPointsModal({ visible, clientId, clientName, onClose, onUpdated }: Props) {
+export function LoyaltyPointsModal({ visible, clientId, clientName, clientBalance, onClose, onUpdated }: Props) {
   const [transactions, setTransactions] = useState<LoyaltyTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -23,9 +24,11 @@ export function LoyaltyPointsModal({ visible, clientId, clientName, onClose, onU
   const [reason, setReason] = useState('Atendimento presencial');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const balance = transactions.reduce((acc, t) => {
-    return acc + (t.type === 'earn' || t.type === 'adjustment' ? t.points : -t.points);
+  const calculatedBalance = transactions.reduce((acc, t) => {
+    return acc + (t.type === 'earn' || t.type === 'adjustment_credit' || t.type === 'adjustment' ? t.points : -t.points);
   }, 0);
+
+  const balance = clientBalance !== undefined ? clientBalance : calculatedBalance;
 
   const loadData = useCallback(async () => {
     setLoading(true);

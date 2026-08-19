@@ -61,7 +61,7 @@ export function ClientSubscriptionModal({ visible, clientId, clientName, onClose
     }
     setSubmitting(true);
     setErrorMsg(null);
-    const res = await activateSubscription(clientId, selectedPlanId, 1, undefined, selectedBarberId);
+    const res = await activateSubscription(clientId, selectedPlanId, 1, selectedBarberId);
     setSubmitting(false);
     if (res.success) {
       loadData();

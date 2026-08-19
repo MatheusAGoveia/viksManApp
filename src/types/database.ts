@@ -120,6 +120,7 @@ export type Database = {
           cancellation_reason: string | null
           cancelled_at: string | null
           client_id: string
+          club_discount_cents: number
           created_at: string
           ends_at: string
           gratuity_cents: number
@@ -140,6 +141,7 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           client_id: string
+          club_discount_cents?: number
           created_at?: string
           ends_at: string
           gratuity_cents?: number
@@ -160,6 +162,7 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           client_id?: string
+          club_discount_cents?: number
           created_at?: string
           ends_at?: string
           gratuity_cents?: number
@@ -828,6 +831,7 @@ export type Database = {
           id: string
           name: string
           price: number
+          price_cents: number
           updated_at: string
         }
         Insert: {
@@ -840,6 +844,7 @@ export type Database = {
           id?: string
           name: string
           price?: number
+          price_cents?: number
           updated_at?: string
         }
         Update: {
@@ -852,6 +857,7 @@ export type Database = {
           id?: string
           name?: string
           price?: number
+          price_cents?: number
           updated_at?: string
         }
         Relationships: []
@@ -999,6 +1005,9 @@ export type Database = {
           quantity: number
           subscription_benefit_id: string
           used_at: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           appointment_id?: string | null
@@ -1010,6 +1019,9 @@ export type Database = {
           quantity?: number
           subscription_benefit_id: string
           used_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           appointment_id?: string | null
@@ -1021,6 +1033,9 @@ export type Database = {
           quantity?: number
           subscription_benefit_id?: string
           used_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: []
       }
@@ -1063,27 +1078,32 @@ export type Database = {
     }
     Functions: {
       activate_viks_club_subscription: {
-        Args: { p_client_id: string; p_plan_id: string; p_months?: number; p_created_by?: string | null }
+        Args: { p_client_id: string; p_plan_id: string; p_cycles?: number; p_barber_id?: string | null }
         Returns: Json
         SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
       }
       renew_viks_club_subscription: {
-        Args: { p_subscription_id: string; p_months?: number; p_created_by?: string | null }
+        Args: { p_subscription_id: string; p_cycles?: number }
         Returns: Json
         SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
       }
       update_viks_club_subscription_status: {
-        Args: { p_subscription_id: string; p_new_status: string; p_created_by?: string | null }
+        Args: { p_subscription_id: string; p_new_status: string }
         Returns: Json
         SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
       }
       consume_viks_club_benefit: {
-        Args: { p_subscription_benefit_id: string; p_appointment_id?: string | null; p_quantity?: number; p_created_by?: string | null; p_notes?: string | null }
+        Args: { p_subscription_benefit_id: string; p_appointment_id?: string | null; p_quantity?: number; p_notes?: string | null }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
+      void_viks_club_benefit_usage: {
+        Args: { p_usage_id: string; p_reason?: string | null }
         Returns: Json
         SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
       }
       manage_loyalty_points: {
-        Args: { p_client_id: string; p_type: string; p_points: number; p_reason: string; p_appointment_id?: string | null; p_created_by?: string | null }
+        Args: { p_client_id: string; p_type: string; p_points: number; p_reason: string; p_appointment_id?: string | null }
         Returns: Json
         SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
       }

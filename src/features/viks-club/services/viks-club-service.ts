@@ -10,13 +10,19 @@ import type {
   ViksClubSubscription,
 } from '../types';
 
-// Mock Data for Demo / Offline Mode
+// Check if Supabase client is active
+function isSupabaseActive(): boolean {
+  return Boolean(supabase);
+}
+
+// Mock Data ONLY for offline / unconfigured Supabase environment
 let demoPlans: ViksClubPlan[] = [
   {
     id: 'plan-essential',
     name: 'Viks Club Essencial',
     description: 'Assinatura mensal para manutenção do corte.',
     price: 89.9,
+    priceCents: 8990,
     billingPeriod: 'monthly',
     active: true,
     benefits: [
@@ -35,8 +41,9 @@ let demoPlans: ViksClubPlan[] = [
   {
     id: 'plan-premium',
     name: 'Viks Club Premium',
-    description: 'Assinatura completa com corte, barba e descontos.',
+    description: 'Assinatura completa com corte, barba e benefícios.',
     price: 149.9,
+    priceCents: 14990,
     billingPeriod: 'monthly',
     allowedDays: ['monday', 'tuesday', 'wednesday', 'thursday'],
     active: true,
@@ -61,16 +68,6 @@ let demoPlans: ViksClubPlan[] = [
         description: '1 Barba por mês',
         active: true,
       },
-      {
-        id: 'b-prem-3',
-        planId: 'plan-premium',
-        benefitType: 'product_discount',
-        serviceId: null,
-        quantity: 0,
-        discountPercent: 10,
-        description: '10% de desconto em produtos',
-        active: true,
-      },
     ],
   },
 ];
@@ -79,49 +76,53 @@ let demoSubscriptions: Record<string, ViksClubSubscription> = {};
 let demoTransactions: Record<string, LoyaltyTransaction[]> = {};
 
 export async function fetchViksClubPlans(): Promise<ViksClubPlan[]> {
-  if (!supabase) {
+  if (!isSupabaseActive() || !supabase) {
     return demoPlans;
   }
 
-  try {
-    const { data: plansData, error: plansError } = await supabase
-      .from('viks_club_plans')
-      .select('*')
-      .order('created_at', { ascending: true });
+  const { data: plansData, error: plansError } = await supabase
+    .from('viks_club_plans')
+    .select('*')
+    .order('created_at', { ascending: true });
 
-    if (plansError || !plansData) {
-      return demoPlans;
-    }
-
-    const { data: benefitsData } = await supabase
-      .from('viks_club_plan_benefits')
-      .select('*');
-
-    return plansData.map((p) => {
-      const rawBenefits = (benefitsData ?? []).filter((b) => b.plan_id === p.id);
-      return {
-        id: String(p.id),
-        name: String(p.name),
-        description: p.description ? String(p.description) : null,
-        price: Number(p.price ?? 0),
-        billingPeriod: (p.billing_period as BillingPeriod) ?? 'monthly',
-        allowedDays: (p.allowed_days as DayOfWeek[]) ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
-        active: Boolean(p.active),
-        benefits: rawBenefits.map((b) => ({
-          id: String(b.id),
-          planId: String(b.plan_id),
-          benefitType: (b.benefit_type as BenefitType) ?? 'service_credit',
-          serviceId: b.service_id ? String(b.service_id) : null,
-          quantity: Number(b.quantity ?? 1),
-          discountPercent: Number(b.discount_percent ?? 0),
-          description: b.description ? String(b.description) : null,
-          active: Boolean(b.active),
-        })),
-      };
-    });
-  } catch {
-    return demoPlans;
+  if (plansError || !plansData) {
+    console.error('Database error fetching plans:', plansError?.message);
+    return [];
   }
+
+  const { data: benefitsData } = await supabase
+    .from('viks_club_plan_benefits')
+    .select('*');
+
+  return plansData.map((p) => {
+    const rawBenefits = (benefitsData ?? []).filter((b) => b.plan_id === p.id);
+    const pCents = Number(p.price_cents ?? roundPriceToCents(p.price));
+    return {
+      id: String(p.id),
+      name: String(p.name),
+      description: p.description ? String(p.description) : null,
+      price: pCents / 100,
+      priceCents: pCents,
+      billingPeriod: (p.billing_period as BillingPeriod) ?? 'monthly',
+      allowedDays: (p.allowed_days as DayOfWeek[]) ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      active: Boolean(p.active),
+      benefits: rawBenefits.map((b) => ({
+        id: String(b.id),
+        planId: String(b.plan_id),
+        benefitType: (b.benefit_type as BenefitType) ?? 'service_credit',
+        serviceId: b.service_id ? String(b.service_id) : null,
+        quantity: Number(b.quantity ?? 1),
+        discountPercent: Number(b.discount_percent ?? 0),
+        description: b.description ? String(b.description) : null,
+        active: Boolean(b.active),
+      })),
+    };
+  });
+}
+
+function roundPriceToCents(price: any): number {
+  const num = Number(price ?? 0);
+  return Math.round(num * 100);
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -133,7 +134,7 @@ export async function saveViksClubPlan(input: {
   id?: string;
   name: string;
   description?: string;
-  price: number;
+  priceCents: number;
   billingPeriod: BillingPeriod;
   allowedDays?: DayOfWeek[];
   active?: boolean;
@@ -146,51 +147,46 @@ export async function saveViksClubPlan(input: {
     description?: string;
   }[];
 }): Promise<{ success: boolean; error?: string }> {
-  const isDemoId = input.id ? !isUuid(input.id) : false;
-  if (!supabase || isDemoId) {
+  if (!isSupabaseActive() || !supabase) {
     return saveDemoPlan(input);
   }
 
   try {
     let planId = input.id;
+    const priceVal = input.priceCents / 100;
+
     if (planId && isUuid(planId)) {
       const { error } = await supabase
         .from('viks_club_plans')
         .update({
           name: input.name,
           description: input.description,
-          price: input.price,
+          price: priceVal,
+          price_cents: input.priceCents,
           billing_period: input.billingPeriod,
           allowed_days: input.allowedDays ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
           active: input.active !== undefined ? input.active : true,
           updated_at: new Date().toISOString(),
         })
         .eq('id', planId);
-      if (error) {
-        if (error.code === 'PGRST202' || error.code === 'PGRST204' || error.code === '22P02' || error.message.includes('uuid')) {
-          return saveDemoPlan(input);
-        }
-        return { success: false, error: error.message };
-      }
+
+      if (error) return { success: false, error: error.message };
     } else {
       const { data, error } = await supabase
         .from('viks_club_plans')
         .insert({
           name: input.name,
           description: input.description,
-          price: input.price,
+          price: priceVal,
+          price_cents: input.priceCents,
           billing_period: input.billingPeriod,
           allowed_days: input.allowedDays ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
           active: input.active !== undefined ? input.active : true,
         })
         .select()
         .single();
-      if (error || !data) {
-        if (error?.code === 'PGRST202' || error?.code === 'PGRST204' || error?.code === '22P02' || error?.message.includes('uuid')) {
-          return saveDemoPlan(input);
-        }
-        return { success: false, error: error?.message || 'Erro ao criar plano.' };
-      }
+
+      if (error || !data) return { success: false, error: error?.message || 'Erro ao criar plano.' };
       planId = String(data.id);
     }
 
@@ -206,11 +202,12 @@ export async function saveViksClubPlan(input: {
         description: b.description || null,
         active: true,
       }));
-      await supabase.from('viks_club_plan_benefits').insert(benefitsInsert);
+      const { error: bErr } = await supabase.from('viks_club_plan_benefits').insert(benefitsInsert);
+      if (bErr) return { success: false, error: bErr.message };
     }
     return { success: true };
-  } catch {
-    return saveDemoPlan(input);
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao salvar plano.' };
   }
 }
 
@@ -218,8 +215,9 @@ function saveDemoPlan(input: {
   id?: string;
   name: string;
   description?: string;
-  price: number;
+  priceCents: number;
   billingPeriod: BillingPeriod;
+  allowedDays?: DayOfWeek[];
   active?: boolean;
   benefits: {
     id?: string;
@@ -231,12 +229,15 @@ function saveDemoPlan(input: {
   }[];
 }) {
   const planId = input.id || `plan-${Date.now()}`;
+  const priceVal = input.priceCents / 100;
   const newPlan: ViksClubPlan = {
     id: planId,
     name: input.name,
     description: input.description || null,
-    price: input.price,
+    price: priceVal,
+    priceCents: input.priceCents,
     billingPeriod: input.billingPeriod,
+    allowedDays: input.allowedDays ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
     active: input.active !== undefined ? input.active : true,
     benefits: input.benefits.map((b, idx) => ({
       id: b.id || `b-${planId}-${idx}`,
@@ -254,137 +255,100 @@ function saveDemoPlan(input: {
 }
 
 export async function fetchClientSubscription(clientId: string): Promise<ViksClubSubscription | null> {
-  if (!supabase || !clientId) {
+  if (!isSupabaseActive() || !supabase || !clientId) {
     return demoSubscriptions[clientId] || null;
   }
 
-  try {
-    const { data: subData, error: subError } = await supabase
-      .from('viks_club_subscriptions')
-      .select('*, viks_club_plans(name)')
-      .eq('client_id', clientId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  const { data: subData, error: subError } = await supabase
+    .from('viks_club_subscriptions')
+    .select('*, viks_club_plans(name)')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-    if (subError || !subData) {
-      return demoSubscriptions[clientId] || null;
-    }
-
-    const { data: benefitsData } = await supabase
-      .from('viks_club_subscription_benefits')
-      .select('*')
-      .eq('subscription_id', subData.id);
-
-    const planName = (subData.viks_club_plans as unknown as Record<string, unknown> | null)?.name;
-
-    return {
-      id: String(subData.id),
-      clientId: String(subData.client_id),
-      planId: String(subData.plan_id),
-      barberId: subData.barber_id ? String(subData.barber_id) : null,
-      planName: planName ? String(planName) : undefined,
-      status: (subData.status as SubscriptionStatus) ?? 'active',
-      startsAt: String(subData.starts_at),
-      currentPeriodStart: String(subData.current_period_start),
-      currentPeriodEnd: String(subData.current_period_end),
-      canceledAt: subData.canceled_at ? String(subData.canceled_at) : null,
-      pausedAt: subData.paused_at ? String(subData.paused_at) : null,
-      createdBy: subData.created_by ? String(subData.created_by) : null,
-      benefits: (benefitsData ?? []).map((b) => ({
-        id: String(b.id),
-        subscriptionId: String(b.subscription_id),
-        planBenefitId: b.plan_benefit_id ? String(b.plan_benefit_id) : null,
-        benefitType: (b.benefit_type as BenefitType) ?? 'service_credit',
-        serviceId: b.service_id ? String(b.service_id) : null,
-        quantityGranted: Number(b.quantity_granted ?? 0),
-        quantityUsed: Number(b.quantity_used ?? 0),
-        discountPercent: Number(b.discount_percent ?? 0),
-        periodStart: String(b.period_start),
-        periodEnd: String(b.period_end),
-      })),
-    };
-  } catch {
-    return demoSubscriptions[clientId] || null;
+  if (subError) {
+    console.error('Database error fetching client subscription:', subError.message);
+    return null;
   }
+  if (!subData) return null;
+
+  const { data: benefitsData } = await supabase
+    .from('viks_club_subscription_benefits')
+    .select('*')
+    .eq('subscription_id', subData.id);
+
+  const planName = (subData.viks_club_plans as unknown as Record<string, unknown> | null)?.name;
+  const nowIso = new Date().toISOString();
+  let status = (subData.status as SubscriptionStatus) ?? 'active';
+
+  // Explicitly check expiry date: if currentPeriodEnd < now, treat as expired
+  if (status === 'active' && subData.current_period_end < nowIso) {
+    status = 'expired';
+  }
+
+  return {
+    id: String(subData.id),
+    clientId: String(subData.client_id),
+    planId: String(subData.plan_id),
+    barberId: subData.barber_id ? String(subData.barber_id) : null,
+    planName: planName ? String(planName) : undefined,
+    status,
+    startsAt: String(subData.starts_at),
+    currentPeriodStart: String(subData.current_period_start),
+    currentPeriodEnd: String(subData.current_period_end),
+    canceledAt: subData.canceled_at ? String(subData.canceled_at) : null,
+    pausedAt: subData.paused_at ? String(subData.paused_at) : null,
+    createdBy: subData.created_by ? String(subData.created_by) : null,
+    benefits: (benefitsData ?? []).map((b) => ({
+      id: String(b.id),
+      subscriptionId: String(b.subscription_id),
+      planBenefitId: b.plan_benefit_id ? String(b.plan_benefit_id) : null,
+      benefitType: (b.benefit_type as BenefitType) ?? 'service_credit',
+      serviceId: b.service_id ? String(b.service_id) : null,
+      quantityGranted: Number(b.quantity_granted ?? 0),
+      quantityUsed: Number(b.quantity_used ?? 0),
+      discountPercent: Number(b.discount_percent ?? 0),
+      periodStart: String(b.period_start),
+      periodEnd: String(b.period_end),
+    })),
+  };
 }
 
 export async function activateSubscription(
   clientId: string,
   planId: string,
-  months = 1,
-  createdBy?: string,
+  cycles = 1,
   barberId?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!supabase) {
-    const plan = demoPlans.find((p) => p.id === planId);
-    if (!plan) return { success: false, error: 'Plano não encontrado.' };
-    const now = new Date();
-    const endDate = new Date(now);
-    endDate.setMonth(endDate.getMonth() + months);
-
-    const subId = `sub-${Date.now()}`;
-    const sub: ViksClubSubscription = {
-      id: subId,
-      clientId,
-      planId,
-      barberId: barberId || 'victor',
-      planName: plan.name,
-      status: 'active',
-      startsAt: now.toISOString(),
-      currentPeriodStart: now.toISOString(),
-      currentPeriodEnd: endDate.toISOString(),
-      createdBy: createdBy || null,
-      benefits: (plan.benefits || []).map((b) => ({
-        id: `sb-${subId}-${b.id}`,
-        subscriptionId: subId,
-        planBenefitId: b.id,
-        benefitType: b.benefitType,
-        serviceId: b.serviceId || null,
-        quantityGranted: b.quantity,
-        quantityUsed: 0,
-        discountPercent: b.discountPercent || 0,
-        periodStart: now.toISOString(),
-        periodEnd: endDate.toISOString(),
-      })),
-    };
-    demoSubscriptions[clientId] = sub;
-    return { success: true };
+  if (!isSupabaseActive() || !supabase) {
+    return fallbackDemoActivate(clientId, planId, cycles, barberId);
   }
 
   try {
     const { data, error } = await supabase.rpc('activate_viks_club_subscription', {
       p_client_id: clientId,
       p_plan_id: planId,
-      p_months: months,
-      p_created_by: createdBy || null,
+      p_cycles: cycles,
+      p_barber_id: barberId || null,
     });
 
     if (error) {
-      if (error.code === 'PGRST202' || error.code === 'PGRST204' || error.message.includes('schema cache')) {
-        return fallbackDemoActivate(clientId, planId, months, createdBy, barberId);
-      }
       return { success: false, error: error.message };
     }
 
-    if (barberId && data) {
-      const subId = (data as Record<string, unknown>)?.subscription_id as string;
-      if (subId) {
-        await supabase.from('viks_club_subscriptions').update({ barber_id: barberId }).eq('id', subId);
-      }
-    }
     return { success: Boolean((data as Record<string, unknown> | null)?.success) };
-  } catch {
-    return fallbackDemoActivate(clientId, planId, months, createdBy, barberId);
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao ativar assinatura.' };
   }
 }
 
-function fallbackDemoActivate(clientId: string, planId: string, months: number, createdBy?: string, barberId?: string) {
+function fallbackDemoActivate(clientId: string, planId: string, cycles: number, barberId?: string) {
   const plan = demoPlans.find((p) => p.id === planId);
   if (!plan) return { success: false, error: 'Plano não encontrado.' };
   const now = new Date();
   const endDate = new Date(now);
-  endDate.setMonth(endDate.getMonth() + months);
+  endDate.setMonth(endDate.getMonth() + cycles);
 
   const subId = `sub-${Date.now()}`;
   const sub: ViksClubSubscription = {
@@ -397,14 +361,13 @@ function fallbackDemoActivate(clientId: string, planId: string, months: number, 
     startsAt: now.toISOString(),
     currentPeriodStart: now.toISOString(),
     currentPeriodEnd: endDate.toISOString(),
-    createdBy: createdBy || null,
     benefits: (plan.benefits || []).map((b) => ({
       id: `sb-${subId}-${b.id}`,
       subscriptionId: subId,
       planBenefitId: b.id,
       benefitType: b.benefitType,
       serviceId: b.serviceId || null,
-      quantityGranted: b.quantity,
+      quantityGranted: b.quantity * cycles,
       quantityUsed: 0,
       discountPercent: b.discountPercent || 0,
       periodStart: now.toISOString(),
@@ -418,38 +381,33 @@ function fallbackDemoActivate(clientId: string, planId: string, months: number, 
 export async function renewSubscription(
   subscriptionId: string,
   clientId: string,
-  months = 1,
-  createdBy?: string,
+  cycles = 1,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!supabase) {
-    return fallbackDemoRenew(subscriptionId, clientId, months);
+  if (!isSupabaseActive() || !supabase) {
+    return fallbackDemoRenew(subscriptionId, clientId, cycles);
   }
 
   try {
     const { data, error } = await supabase.rpc('renew_viks_club_subscription', {
       p_subscription_id: subscriptionId,
-      p_months: months,
-      p_created_by: createdBy || null,
+      p_cycles: cycles,
     });
 
     if (error) {
-      if (error.code === 'PGRST202' || error.code === 'PGRST204' || error.message.includes('schema cache')) {
-        return fallbackDemoRenew(subscriptionId, clientId, months);
-      }
       return { success: false, error: error.message };
     }
     return { success: Boolean((data as Record<string, unknown> | null)?.success) };
-  } catch {
-    return fallbackDemoRenew(subscriptionId, clientId, months);
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao renovar assinatura.' };
   }
 }
 
-function fallbackDemoRenew(subscriptionId: string, clientId: string, months: number) {
+function fallbackDemoRenew(subscriptionId: string, clientId: string, cycles: number) {
   const sub = demoSubscriptions[clientId];
   if (!sub || sub.id !== subscriptionId) return { success: false, error: 'Assinatura não encontrada.' };
   const now = new Date();
   const endDate = new Date(now);
-  endDate.setMonth(endDate.getMonth() + months);
+  endDate.setMonth(endDate.getMonth() + cycles);
   sub.status = 'active';
   sub.currentPeriodStart = now.toISOString();
   sub.currentPeriodEnd = endDate.toISOString();
@@ -467,9 +425,8 @@ export async function updateSubscriptionStatus(
   subscriptionId: string,
   clientId: string,
   newStatus: SubscriptionStatus,
-  createdBy?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!supabase) {
+  if (!isSupabaseActive() || !supabase) {
     return fallbackDemoStatus(subscriptionId, clientId, newStatus);
   }
 
@@ -477,18 +434,14 @@ export async function updateSubscriptionStatus(
     const { data, error } = await supabase.rpc('update_viks_club_subscription_status', {
       p_subscription_id: subscriptionId,
       p_new_status: newStatus,
-      p_created_by: createdBy || null,
     });
 
     if (error) {
-      if (error.code === 'PGRST202' || error.code === 'PGRST204' || error.message.includes('schema cache')) {
-        return fallbackDemoStatus(subscriptionId, clientId, newStatus);
-      }
       return { success: false, error: error.message };
     }
     return { success: Boolean((data as Record<string, unknown> | null)?.success) };
-  } catch {
-    return fallbackDemoStatus(subscriptionId, clientId, newStatus);
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao alterar status da assinatura.' };
   }
 }
 
@@ -507,10 +460,9 @@ export async function consumeBenefit(
   clientId: string,
   appointmentId?: string,
   quantity = 1,
-  createdBy?: string,
   notes?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!supabase) {
+  if (!isSupabaseActive() || !supabase) {
     return fallbackDemoConsume(subscriptionBenefitId, clientId, quantity);
   }
 
@@ -519,19 +471,15 @@ export async function consumeBenefit(
       p_subscription_benefit_id: subscriptionBenefitId,
       p_appointment_id: appointmentId || null,
       p_quantity: quantity,
-      p_created_by: createdBy || null,
       p_notes: notes || null,
     });
 
     if (error) {
-      if (error.code === 'PGRST202' || error.code === 'PGRST204' || error.message.includes('schema cache')) {
-        return fallbackDemoConsume(subscriptionBenefitId, clientId, quantity);
-      }
       return { success: false, error: error.message };
     }
     return { success: Boolean((data as Record<string, unknown> | null)?.success) };
-  } catch {
-    return fallbackDemoConsume(subscriptionBenefitId, clientId, quantity);
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao registrar consumo de benefício.' };
   }
 }
 
@@ -549,8 +497,31 @@ function fallbackDemoConsume(subscriptionBenefitId: string, clientId: string, qu
   return { success: true };
 }
 
+export async function voidBenefitUsage(
+  usageId: string,
+  reason = 'Estorno de atendimento',
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseActive() || !supabase) {
+    return { success: true };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('void_viks_club_benefit_usage', {
+      p_usage_id: usageId,
+      p_reason: reason,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: Boolean((data as Record<string, unknown> | null)?.success) };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao estornar uso do benefício.' };
+  }
+}
+
 export async function fetchLoyaltyTransactions(clientId: string): Promise<LoyaltyTransaction[]> {
-  if (!supabase || !clientId) {
+  if (!isSupabaseActive() || !supabase || !clientId) {
     return demoTransactions[clientId] || [
       {
         id: 'tx-1',
@@ -563,7 +534,7 @@ export async function fetchLoyaltyTransactions(clientId: string): Promise<Loyalt
       {
         id: 'tx-2',
         clientId,
-        type: 'adjustment',
+        type: 'adjustment_credit',
         points: 50,
         reason: 'Bônus de Boas-Vindas Viks',
         createdAt: new Date(Date.now() - 86400000).toISOString(),
@@ -571,28 +542,27 @@ export async function fetchLoyaltyTransactions(clientId: string): Promise<Loyalt
     ];
   }
 
-  try {
-    const { data, error } = await supabase
-      .from('loyalty_transactions')
-      .select('*')
-      .eq('client_id', clientId)
-      .order('created_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('loyalty_transactions')
+    .select('*')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
 
-    if (error || !data) return demoTransactions[clientId] || [];
-
-    return data.map((t) => ({
-      id: String(t.id),
-      clientId: String(t.client_id),
-      type: (t.type as LoyaltyTransactionType) ?? 'earn',
-      points: Number(t.points ?? 0),
-      reason: String(t.reason ?? ''),
-      appointmentId: t.appointment_id ? String(t.appointment_id) : null,
-      createdBy: t.created_by ? String(t.created_by) : null,
-      createdAt: String(t.created_at),
-    }));
-  } catch {
-    return demoTransactions[clientId] || [];
+  if (error || !data) {
+    console.error('Database error fetching loyalty transactions:', error?.message);
+    return [];
   }
+
+  return data.map((t) => ({
+    id: String(t.id),
+    clientId: String(t.client_id),
+    type: (t.type as LoyaltyTransactionType) ?? 'earn',
+    points: Number(t.points ?? 0),
+    reason: String(t.reason ?? ''),
+    appointmentId: t.appointment_id ? String(t.appointment_id) : null,
+    createdBy: t.created_by ? String(t.created_by) : null,
+    createdAt: String(t.created_at),
+  }));
 }
 
 export async function manageLoyaltyPoints(
@@ -601,10 +571,9 @@ export async function manageLoyaltyPoints(
   points: number,
   reason: string,
   appointmentId?: string,
-  createdBy?: string,
 ): Promise<{ success: boolean; newBalance?: number; error?: string }> {
-  if (!supabase) {
-    return fallbackDemoManageLoyalty(clientId, type, points, reason, appointmentId, createdBy);
+  if (!isSupabaseActive() || !supabase) {
+    return fallbackDemoManageLoyalty(clientId, type, points, reason, appointmentId);
   }
 
   try {
@@ -614,19 +583,15 @@ export async function manageLoyaltyPoints(
       p_points: points,
       p_reason: reason,
       p_appointment_id: appointmentId || null,
-      p_created_by: createdBy || null,
     });
 
     if (error) {
-      if (error.code === 'PGRST202' || error.code === 'PGRST204' || error.message.includes('schema cache')) {
-        return fallbackDemoManageLoyalty(clientId, type, points, reason, appointmentId, createdBy);
-      }
       return { success: false, error: error.message };
     }
     const res = data as Record<string, unknown> | null;
     return { success: Boolean(res?.success), newBalance: Number(res?.new_balance ?? 0) };
-  } catch {
-    return fallbackDemoManageLoyalty(clientId, type, points, reason, appointmentId, createdBy);
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao processar pontos de fidelidade.' };
   }
 }
 
@@ -636,7 +601,6 @@ function fallbackDemoManageLoyalty(
   points: number,
   reason: string,
   appointmentId?: string,
-  createdBy?: string,
 ) {
   const list = demoTransactions[clientId] || [];
   const newTx: LoyaltyTransaction = {
@@ -646,11 +610,10 @@ function fallbackDemoManageLoyalty(
     points,
     reason,
     appointmentId: appointmentId || null,
-    createdBy: createdBy || null,
     createdAt: new Date().toISOString(),
   };
   demoTransactions[clientId] = [newTx, ...list];
-  let balance = list.reduce((acc, t) => acc + (t.type === 'earn' || t.type === 'adjustment' ? t.points : -t.points), 0);
-  balance += type === 'earn' || type === 'adjustment' ? points : -points;
+  let balance = list.reduce((acc, t) => acc + (t.type === 'earn' || t.type === 'adjustment_credit' || t.type === 'adjustment' ? t.points : -t.points), 0);
+  balance += type === 'earn' || type === 'adjustment_credit' || type === 'adjustment' ? points : -points;
   return { success: true, newBalance: Math.max(0, balance) };
 }

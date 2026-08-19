@@ -98,9 +98,19 @@ export default function ViksClubScreen() {
       return;
     }
 
+    const isStaffOrAdmin = auth.profile?.role === 'manager' || auth.profile?.role === 'admin';
+    if (!isStaffOrAdmin) {
+      setFeedbackMsg({
+        kind: 'error',
+        title: 'CONTRATAÇÃO NA RECEPÇÃO',
+        text: 'Viks Club ainda não está disponível para contratação online. Fale com a equipe na recepção da barbearia para ativar seu plano.',
+      });
+      return;
+    }
+
     setBusy(true);
     setFeedbackMsg(null);
-    const res = await activateSubscription(clientId, planId, 1, undefined, selectedBarberId);
+    const res = await activateSubscription(clientId, planId, 1, selectedBarberId);
     setBusy(false);
     if (res.success) {
       setFeedbackMsg({
@@ -120,6 +130,18 @@ export default function ViksClubScreen() {
 
   async function executeStatusChange(newStatus: SubscriptionStatus) {
     if (!subscription) return;
+
+    const isStaffOrAdmin = auth.profile?.role === 'manager' || auth.profile?.role === 'admin';
+    if (!isStaffOrAdmin) {
+      setFeedbackMsg({
+        kind: 'error',
+        title: 'SOLICITAÇÃO NA RECEPÇÃO',
+        text: 'A alteração de status da sua assinatura (pausa/cancelamento) deve ser realizada juntamente à recepção da barbearia.',
+      });
+      setConfirmModalTarget(null);
+      return;
+    }
+
     setBusy(true);
     setFeedbackMsg(null);
     const res = await updateSubscriptionStatus(subscription.id, clientId, newStatus);

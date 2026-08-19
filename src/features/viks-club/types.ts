@@ -1,7 +1,7 @@
 export type BillingPeriod = 'monthly' | 'yearly';
 export type BenefitType = 'service_credit' | 'service_discount' | 'product_discount';
 export type SubscriptionStatus = 'active' | 'paused' | 'canceled' | 'expired';
-export type LoyaltyTransactionType = 'earn' | 'redeem' | 'adjustment' | 'expiration';
+export type LoyaltyTransactionType = 'earn' | 'redeem' | 'adjustment_credit' | 'adjustment_debit' | 'expiration' | 'adjustment';
 export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
 export interface ViksClubPlanBenefit {
@@ -22,6 +22,7 @@ export interface ViksClubPlan {
   name: string;
   description?: string | null;
   price: number;
+  priceCents: number;
   billingPeriod: BillingPeriod;
   allowedDays?: DayOfWeek[];
   barberId?: string | null;
@@ -71,6 +72,9 @@ export interface ViksClubBenefitUsage {
   usedAt: string;
   createdBy?: string | null;
   notes?: string | null;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  voidReason?: string | null;
 }
 
 export interface LoyaltyTransaction {

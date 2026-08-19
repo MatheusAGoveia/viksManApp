@@ -30,6 +30,7 @@ export type AdminAppointment = {
   duration: number;
   partySize: number;
   totalCents: number;
+  clubDiscountCents?: number;
   paymentStatus: string;
   prefersSilentService: boolean;
 };

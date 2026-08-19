@@ -44,6 +44,8 @@ type AgendaTabProps = {
   markPaid: (item: AdminAppointment) => void;
   openReschedule: (item: AdminAppointment) => void;
   changeStatus: (item: AdminAppointment, status: 'cancelled' | 'completed' | 'no_show') => void;
+  onConsumeBenefit?: (item: AdminAppointment) => void;
+  onVoidBenefit?: (item: AdminAppointment) => void;
   wide?: boolean;
 };
 
@@ -82,6 +84,8 @@ export function AgendaTab({
   markPaid,
   openReschedule,
   changeStatus,
+  onConsumeBenefit,
+  onVoidBenefit,
   wide,
 }: AgendaTabProps) {
   return (
@@ -163,6 +167,8 @@ export function AgendaTab({
               onPaid={() => markPaid(item)}
               onReschedule={() => openReschedule(item)}
               onStatus={(status) => changeStatus(item, status)}
+              onConsumeBenefit={() => onConsumeBenefit?.(item)}
+              onVoidBenefit={() => onVoidBenefit?.(item)}
             />
           ))
         ) : (
