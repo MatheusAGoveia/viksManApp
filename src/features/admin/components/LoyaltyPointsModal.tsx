@@ -110,8 +110,11 @@ export function LoyaltyPointsModal({ visible, clientId, clientName, clientBalanc
               <Pressable onPress={() => setMode('redeem')} style={[styles.typeChip, mode === 'redeem' && styles.typeChipActive]}>
                 <Text style={[styles.typeChipText, mode === 'redeem' && styles.selectedText]}>RESGATAR (-)</Text>
               </Pressable>
-              <Pressable onPress={() => setMode('adjustment')} style={[styles.typeChip, mode === 'adjustment' && styles.typeChipActive]}>
-                <Text style={[styles.typeChipText, mode === 'adjustment' && styles.selectedText]}>AJUSTE</Text>
+              <Pressable onPress={() => setMode('adjustment_credit')} style={[styles.typeChip, mode === 'adjustment_credit' && styles.typeChipActive]}>
+                <Text style={[styles.typeChipText, mode === 'adjustment_credit' && styles.selectedText]}>CRÉDITO (+)</Text>
+              </Pressable>
+              <Pressable onPress={() => setMode('adjustment_debit')} style={[styles.typeChip, mode === 'adjustment_debit' && styles.typeChipActive]}>
+                <Text style={[styles.typeChipText, mode === 'adjustment_debit' && styles.selectedText]}>DÉBITO (-)</Text>
               </Pressable>
             </View>
 
@@ -139,7 +142,7 @@ export function LoyaltyPointsModal({ visible, clientId, clientName, clientBalanc
                   <Text style={styles.emptyText}>Nenhuma transação registrada.</Text>
                 ) : (
                   transactions.map((tx) => {
-                    const isPositive = tx.type === 'earn' || tx.type === 'adjustment';
+                    const isPositive = tx.type === 'earn' || tx.type === 'adjustment_credit' || tx.type === 'adjustment';
                     return (
                       <View key={tx.id} style={styles.txRow}>
                         <View style={styles.txCopy}>

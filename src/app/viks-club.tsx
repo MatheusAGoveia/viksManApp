@@ -366,7 +366,7 @@ export default function ViksClubScreen() {
                   <View style={styles.txList}>
                     <Text style={styles.txListTitle}>EXTRATO RECENTE DE PONTOS</Text>
                     {loyaltyTxs.slice(0, 5).map((tx) => {
-                      const isPositive = tx.type === 'earn' || tx.type === 'adjustment';
+                      const isPositive = tx.type === 'earn' || tx.type === 'adjustment_credit' || tx.type === 'adjustment';
                       return (
                         <View key={tx.id} style={styles.txRow}>
                           <View style={{ flex: 1 }}>
@@ -459,8 +459,8 @@ export default function ViksClubScreen() {
                         {p.description ? <Text style={styles.planCardDesc}>{p.description}</Text> : null}
                       </View>
                       <View style={styles.priceContainer}>
-                        <Text style={styles.priceNumber}>R$ {p.price.toFixed(2).replace('.', ',')}</Text>
-                        <Text style={styles.pricePeriod}>/ mês</Text>
+                        <Text style={styles.priceNumber}>R$ {((p.priceCents || Math.round(p.price * 100)) / 100).toFixed(2).replace('.', ',')}</Text>
+                        <Text style={styles.pricePeriod}>/ {p.billingPeriod === 'yearly' ? 'ano' : 'mês'}</Text>
                       </View>
                     </View>
 

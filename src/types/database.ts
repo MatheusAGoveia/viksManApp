@@ -1102,6 +1102,16 @@ export type Database = {
         Returns: Json
         SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
       }
+      reschedule_appointment: {
+        Args: { p_appointment_id: string; p_starts_at: string }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
+      calculate_appointment_totals: {
+        Args: { p_appointment_id: string }
+        Returns: undefined
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
       manage_loyalty_points: {
         Args: { p_client_id: string; p_type: string; p_points: number; p_reason: string; p_appointment_id?: string | null }
         Returns: Json

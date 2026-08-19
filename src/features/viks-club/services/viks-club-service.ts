@@ -1,3 +1,4 @@
+import { brasiliaDateTimeToIso } from '@/lib/brasilia-time';
 import { supabase } from '@/lib/supabase';
 import type {
   BenefitType,
@@ -11,7 +12,7 @@ import type {
 } from '../types';
 
 // Check if Supabase client is active
-function isSupabaseActive(): boolean {
+export function isSupabaseActive(): boolean {
   return Boolean(supabase);
 }
 
@@ -287,6 +288,16 @@ export async function fetchClientSubscription(clientId: string): Promise<ViksClu
     status = 'expired';
   }
 
+  const currentPeriodStart = String(subData.current_period_start);
+  const currentPeriodEnd = String(subData.current_period_end);
+
+  // Filter benefits to ONLY return active benefits for the current subscription period
+  const activePeriodBenefits = (benefitsData ?? []).filter((b) => {
+    const pStart = String(b.period_start);
+    const pEnd = String(b.period_end);
+    return pStart <= currentPeriodEnd && pEnd >= currentPeriodStart && pEnd >= nowIso;
+  });
+
   return {
     id: String(subData.id),
     clientId: String(subData.client_id),
@@ -295,12 +306,12 @@ export async function fetchClientSubscription(clientId: string): Promise<ViksClu
     planName: planName ? String(planName) : undefined,
     status,
     startsAt: String(subData.starts_at),
-    currentPeriodStart: String(subData.current_period_start),
-    currentPeriodEnd: String(subData.current_period_end),
+    currentPeriodStart,
+    currentPeriodEnd,
     canceledAt: subData.canceled_at ? String(subData.canceled_at) : null,
     pausedAt: subData.paused_at ? String(subData.paused_at) : null,
     createdBy: subData.created_by ? String(subData.created_by) : null,
-    benefits: (benefitsData ?? []).map((b) => ({
+    benefits: activePeriodBenefits.map((b) => ({
       id: String(b.id),
       subscriptionId: String(b.subscription_id),
       planBenefitId: b.plan_benefit_id ? String(b.plan_benefit_id) : null,
@@ -616,4 +627,28 @@ function fallbackDemoManageLoyalty(
   let balance = list.reduce((acc, t) => acc + (t.type === 'earn' || t.type === 'adjustment_credit' || t.type === 'adjustment' ? t.points : -t.points), 0);
   balance += type === 'earn' || type === 'adjustment_credit' || type === 'adjustment' ? points : -points;
   return { success: true, newBalance: Math.max(0, balance) };
+}
+
+export async function rescheduleAppointment(
+  appointmentId: string,
+  date: string,
+  time: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseActive() || !supabase) {
+    return { success: true };
+  }
+  try {
+    const startsAt = brasiliaDateTimeToIso(date, time);
+    const { data, error } = await supabase.rpc('reschedule_appointment', {
+      p_appointment_id: appointmentId,
+      p_starts_at: startsAt,
+    });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    const res = data as Record<string, unknown> | null;
+    return { success: Boolean(res?.success) };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao reagendar atendimento.' };
+  }
 }

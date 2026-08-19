@@ -14,6 +14,7 @@ import { colors, fonts } from '@/constants/theme';
 import { Booking, useBookings } from '@/context/booking-context';
 import { barbers as catalogBarbers, services as catalogServices } from '@/data/catalog';
 import { supabase } from '@/lib/supabase';
+import { isSupabaseActive, rescheduleAppointment } from '../services/viks-club-service';
 import type { DayOfWeek, ViksClubSubscription } from '../types';
 
 type SubscriberBookingCalendarProps = {
@@ -30,7 +31,7 @@ export function SubscriberBookingCalendar({
   allowedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
   onBookingChanged,
 }: SubscriberBookingCalendarProps) {
-  const { bookings, addBooking, cancelBooking } = useBookings();
+  const { bookings, addBooking, cancelBooking, refreshBookings } = useBookings();
 
   // Current viewed month date state
   const [viewDate, setViewDate] = useState(() => new Date());
@@ -48,14 +49,15 @@ export function SubscriberBookingCalendar({
   const [busy, setBusy] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [availableTimeSlots, setAvailableTimeSlots] = useState<string[]>([]);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null);
 
   // Services included in active subscription service_credits
   const planServices = useMemo(() => {
     const creditServiceIds = (subscription.benefits || [])
-      .filter((b) => b.benefitType === 'service_credit' && b.serviceId)
+      .filter((b) => b.benefitType === 'service_credit' && b.serviceId && b.quantityGranted > b.quantityUsed)
       .map((b) => b.serviceId);
-    if (creditServiceIds.length === 0) return catalogServices.slice(0, 1);
+    if (creditServiceIds.length === 0) return [];
     return catalogServices.filter((srv) => creditServiceIds.includes(srv.id));
   }, [subscription.benefits]);
 
@@ -133,7 +135,8 @@ export function SubscriberBookingCalendar({
     let active = true;
     async function loadSlots() {
       setSlotsLoading(true);
-      if (supabase) {
+      setSlotsError(null);
+      if (isSupabaseActive() && supabase) {
         const targetBarber = subscription.barberId || selectedBarberId;
         const { data, error } = await supabase.rpc('get_available_slots', {
           p_unit_slug: 'betim',
@@ -142,22 +145,25 @@ export function SubscriberBookingCalendar({
           p_barber_slug: targetBarber,
           p_party_size: 1,
         });
-        if (active && !error && data) {
-          const times: string[] = (data ?? []).map((slot: Record<string, unknown>) =>
-            new Intl.DateTimeFormat('pt-BR', {
-              timeZone: 'America/Sao_Paulo',
-              hour: '2-digit',
-              minute: '2-digit',
-              hourCycle: 'h23',
-            }).format(new Date(String(slot.starts_at)))
-          );
-          const uniqueTimes = Array.from(new Set(times));
-          setAvailableTimeSlots(uniqueTimes);
-          if (uniqueTimes.length > 0 && !uniqueTimes.includes(selectedTime)) {
-            setSelectedTime(uniqueTimes[0]);
+        if (active) {
+          if (error) {
+            setSlotsError('Não foi possível consultar os horários disponíveis.');
+            setAvailableTimeSlots([]);
+          } else if (data) {
+            const times: string[] = (data ?? []).map((slot: Record<string, unknown>) =>
+              new Intl.DateTimeFormat('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                hour: '2-digit',
+                minute: '2-digit',
+                hourCycle: 'h23',
+              }).format(new Date(String(slot.starts_at)))
+            );
+            const uniqueTimes = Array.from(new Set(times));
+            setAvailableTimeSlots(uniqueTimes);
+            if (uniqueTimes.length > 0 && !uniqueTimes.includes(selectedTime)) {
+              setSelectedTime(uniqueTimes[0]);
+            }
           }
-        } else if (active) {
-          setAvailableTimeSlots(['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']);
         }
       } else if (active) {
         setAvailableTimeSlots(['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']);
@@ -195,23 +201,31 @@ export function SubscriberBookingCalendar({
       let successCount = 0;
       let failedCount = 0;
 
-      // 1. Add selected date booking
-      try {
-        await addBooking({
-          serviceId: selectedServiceId,
-          barberId: targetBarber,
-          date: selectedDateIso,
-          time: selectedTime,
-        });
-        successCount++;
-      } catch {
-        failedCount++;
-      }
-
-      // If this was a rescheduling operation, cancel the old booking ONLY after new one succeeds
-      if (reschedulingBookingId && successCount > 0) {
-        await cancelBooking(reschedulingBookingId).catch(() => undefined);
-        setReschedulingBookingId(null);
+      // 1. If rescheduling existing booking, use atomic reschedule RPC
+      if (reschedulingBookingId) {
+        const res = await rescheduleAppointment(reschedulingBookingId, selectedDateIso, selectedTime);
+        if (res.success) {
+          successCount++;
+          setReschedulingBookingId(null);
+          refreshBookings();
+        } else {
+          failedCount++;
+          setFeedback({ kind: 'error', msg: res.error || 'Falha ao reagendar atendimento.' });
+          setBusy(false);
+          return;
+        }
+      } else {
+        try {
+          await addBooking({
+            serviceId: selectedServiceId,
+            barberId: targetBarber,
+            date: selectedDateIso,
+            time: selectedTime,
+          });
+          successCount++;
+        } catch {
+          failedCount++;
+        }
       }
 
       // 2. Repeat weekly for remaining allowed weeks if enabled
@@ -435,20 +449,28 @@ export function SubscriberBookingCalendar({
             <ScrollView contentContainerStyle={styles.modalBody}>
               {/* Service selector */}
               <Text style={styles.fieldLabel}>SERVIÇO INCLUSO NO PLANO</Text>
-              <View style={styles.optionsRow}>
-                {planServices.map((srv) => {
-                  const isSel = selectedServiceId === srv.id;
-                  return (
-                    <Pressable
-                      key={srv.id}
-                      onPress={() => setSelectedServiceId(srv.id)}
-                      style={[styles.optionChip, isSel && styles.optionChipSelected]}
-                    >
-                      <Text style={[styles.optionChipText, isSel && styles.textWhite]}>{srv.name}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              {planServices.length > 0 ? (
+                <View style={styles.optionsRow}>
+                  {planServices.map((srv) => {
+                    const isSel = selectedServiceId === srv.id;
+                    return (
+                      <Pressable
+                        key={srv.id}
+                        onPress={() => setSelectedServiceId(srv.id)}
+                        style={[styles.optionChip, isSel && styles.optionChipSelected]}
+                      >
+                        <Text style={[styles.optionChipText, isSel && styles.textWhite]}>{srv.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={{ backgroundColor: colors.paper, padding: 12, borderWidth: 1, borderColor: colors.line, marginVertical: 8 }}>
+                  <Text style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.muted, textAlign: 'center' }}>
+                    Nenhum serviço do Viks Club disponível neste período.
+                  </Text>
+                </View>
+              )}
 
               {/* Barber selector */}
               <Text style={styles.fieldLabel}>BARBEIRO VINCULADO À ASSINATURA</Text>
@@ -488,6 +510,12 @@ export function SubscriberBookingCalendar({
                   <ActivityIndicator color={colors.blue} size="small" />
                   <Text style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.muted, marginTop: 4 }}>
                     Consultando disponibilidade da agenda...
+                  </Text>
+                </View>
+              ) : slotsError ? (
+                <View style={{ backgroundColor: '#FFEBEE', padding: 12, borderWidth: 1, borderColor: '#FFCDD2', marginVertical: 8 }}>
+                  <Text style={{ fontFamily: fonts.sans, fontSize: 11, color: '#D32F2F', textAlign: 'center', fontWeight: '700' }}>
+                    {slotsError}
                   </Text>
                 </View>
               ) : availableTimeSlots.length > 0 ? (

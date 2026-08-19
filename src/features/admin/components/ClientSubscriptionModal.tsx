@@ -165,7 +165,9 @@ export function ClientSubscriptionModal({ visible, clientId, clientName, onClose
                   <View style={styles.actionGrid}>
                     <Pressable onPress={handleRenew} disabled={submitting} style={styles.actionBtnPrimary}>
                       <Ionicons name="refresh-outline" size={14} color={colors.white} />
-                      <Text style={styles.actionBtnPrimaryText}>RENOVAR (+1 MÊS)</Text>
+                      <Text style={styles.actionBtnPrimaryText}>
+                        {plans.find((p) => p.id === subscription.planId)?.billingPeriod === 'yearly' ? 'RENOVAR (+1 ANO)' : 'RENOVAR (+1 MÊS)'}
+                      </Text>
                     </Pressable>
 
                     {subscription.status === 'active' ? (
