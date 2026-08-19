@@ -4,11 +4,13 @@ import { Pressable, Text, View } from 'react-native';
 import { colors } from '@/constants/theme';
 import { styles } from '../styles';
 import type { Client, Option } from '../types';
-import { LabeledInput } from './LabeledInput';
+import { ClientSearchAutocomplete } from './ClientSearchAutocomplete';
+import { DateTimePickerSelectors } from './DateTimePickerSelectors';
 import { OptionChips } from './OptionChips';
 
 type AppointmentEditorProps = {
   clients: Client[];
+  selectedClient?: Client | null;
   services: Option[];
   barbers: Option[];
   clientId: string;
@@ -18,7 +20,8 @@ type AppointmentEditorProps = {
   time: string;
   editing: boolean;
   saving: boolean;
-  setClientId: (id: string) => void;
+  onSelectClient: (client: Client) => void;
+  onClearClient: () => void;
   setServiceId: (id: string) => void;
   setBarberId: (id: string) => void;
   setDate: (value: string) => void;
@@ -29,6 +32,7 @@ type AppointmentEditorProps = {
 
 export function AppointmentEditor({
   clients,
+  selectedClient,
   services,
   barbers,
   clientId,
@@ -38,7 +42,8 @@ export function AppointmentEditor({
   time,
   editing,
   saving,
-  setClientId,
+  onSelectClient,
+  onClearClient,
   setServiceId,
   setBarberId,
   setDate,
@@ -59,10 +64,12 @@ export function AppointmentEditor({
       </View>
 
       <Text style={styles.inputLabel}>CLIENTE</Text>
-      <OptionChips
-        options={clients.map((item) => ({ id: item.id, slug: item.id, name: item.name }))}
-        selected={clientId}
-        onSelect={setClientId}
+      <ClientSearchAutocomplete
+        selectedClientId={clientId}
+        selectedClient={selectedClient}
+        onSelectClient={onSelectClient}
+        onClearClient={onClearClient}
+        demoClients={clients}
       />
 
       <Text style={styles.inputLabel}>SERVIÇO</Text>
@@ -71,10 +78,7 @@ export function AppointmentEditor({
       <Text style={styles.inputLabel}>PROFISSIONAL</Text>
       <OptionChips options={barbers} selected={barberId} onSelect={setBarberId} />
 
-      <View style={styles.inputPair}>
-        <LabeledInput label="DATA" value={date} onChangeText={setDate} placeholder="AAAA-MM-DD" />
-        <LabeledInput label="HORA" value={time} onChangeText={setTime} placeholder="09:00" />
-      </View>
+      <DateTimePickerSelectors date={date} time={time} onSelectDate={setDate} onSelectTime={setTime} />
 
       <Pressable disabled={saving} onPress={onSave} style={styles.editorSave}>
         <Text style={styles.editorSaveText}>

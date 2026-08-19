@@ -17,6 +17,7 @@ type AgendaTabProps = {
   showEditor: boolean;
   editingId?: string;
   clients: Client[];
+  selectedClient?: Client | null;
   serviceOptions: Option[];
   barberOptions: Option[];
   clientId: string;
@@ -28,7 +29,8 @@ type AgendaTabProps = {
   setMode: (mode: CalendarMode) => void;
   moveDate: (direction: number) => void;
   openCreate: () => void;
-  setClientId: (id: string) => void;
+  onSelectClient: (client: Client) => void;
+  onClearClient: () => void;
   setServiceId: (id: string) => void;
   setBarberId: (id: string) => void;
   setDate: (value: string) => void;
@@ -49,6 +51,7 @@ export function AgendaTab({
   showEditor,
   editingId,
   clients,
+  selectedClient,
   serviceOptions,
   barberOptions,
   clientId,
@@ -60,7 +63,8 @@ export function AgendaTab({
   setMode,
   moveDate,
   openCreate,
-  setClientId,
+  onSelectClient,
+  onClearClient,
   setServiceId,
   setBarberId,
   setDate,
@@ -117,6 +121,7 @@ export function AgendaTab({
       {showEditor ? (
         <AppointmentEditor
           clients={clients}
+          selectedClient={selectedClient}
           services={serviceOptions}
           barbers={barberOptions}
           clientId={clientId}
@@ -126,7 +131,8 @@ export function AgendaTab({
           time={time}
           editing={Boolean(editingId)}
           saving={saving}
-          setClientId={setClientId}
+          onSelectClient={onSelectClient}
+          onClearClient={onClearClient}
           setServiceId={setServiceId}
           setBarberId={setBarberId}
           setDate={setDate}

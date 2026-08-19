@@ -42,7 +42,7 @@ export default function AdminScreen() {
   const [mode, setMode] = useState<CalendarMode>('day');
   const [anchorDate, setAnchorDate] = useState(todayIso());
   const [appointments, setAppointments] = useState<AdminAppointment[]>(() => demoAppointments());
-  const [clients, setClients] = useState<Client[]>(demoClients);
+  const [clients] = useState<Client[]>(demoClients);
   const [serviceOptions, setServiceOptions] = useState<Option[]>(
     localServices.map((item) => ({
       id: item.id,
@@ -64,7 +64,8 @@ export default function AdminScreen() {
   const [search, setSearch] = useState('');
   const [showEditor, setShowEditor] = useState(false);
   const [editingId, setEditingId] = useState<string>();
-  const [clientId, setClientId] = useState(demoClients[0].id);
+  const [clientId, setClientId] = useState('');
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [serviceId, setServiceId] = useState(localServices[0].id);
   const [barberId, setBarberId] = useState('victor');
   const [date, setDate] = useState(todayIso());
@@ -92,6 +93,16 @@ export default function AdminScreen() {
   const [ruleWindow, setRuleWindow] = useState('60');
   const [pixKey, setPixKey] = useState('matheusaagd2@gmail.com');
 
+  const handleSelectClient = useCallback((client: Client) => {
+    setClientId(client.id);
+    setSelectedClient(client);
+  }, []);
+
+  const handleClearClient = useCallback(() => {
+    setClientId('');
+    setSelectedClient(null);
+  }, []);
+
   const loadRemote = useCallback(async () => {
     if (!supabase || !auth.isStaff) {
       setLoading(false);
@@ -100,7 +111,6 @@ export default function AdminScreen() {
     setLoading(true);
     const [
       appointmentResult,
-      clientResult,
       serviceResult,
       barberResult,
       blockResult,
@@ -115,7 +125,6 @@ export default function AdminScreen() {
         .gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00'))
         .lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00'))
         .order('starts_at'),
-      supabase.from('profiles').select('id, full_name, phone').eq('role', 'client').order('full_name').limit(100),
       supabase.from('services').select('id, slug, name, duration_minutes, price_cents, active').order('sort_order'),
       supabase.from('barbers').select('id, slug, name, active').order('sort_order'),
       supabase
@@ -162,15 +171,6 @@ export default function AdminScreen() {
             paymentStatus: String(row.payment_status ?? 'pending'),
           };
         }),
-      );
-    }
-    if (!clientResult.error) {
-      setClients(
-        (clientResult.data ?? []).map((item) => ({
-          id: item.id,
-          name: item.full_name || 'Cliente sem nome',
-          phone: item.phone || 'Sem telefone',
-        })),
       );
     }
     if (!serviceResult.error) {
@@ -263,20 +263,38 @@ export default function AdminScreen() {
     setAnchorDate(addIsoDays(anchorDate, direction * (mode === 'week' ? 7 : 1)));
   }
 
-  function openCreate(selectedClientId?: string) {
+  async function openCreate(selectedClientId?: string) {
     setEditingId(undefined);
-    setClientId(selectedClientId ?? clients[0]?.id ?? '');
     setServiceId(serviceOptions[0]?.id ?? '');
     setBarberId(barberOptions[0]?.id ?? '');
     setDate(anchorDate);
     setTime('09:00');
     setShowEditor(true);
     setNotice('');
+    if (selectedClientId) {
+      setClientId(selectedClientId);
+      const existing = clients.find((c) => c.id === selectedClientId);
+      if (existing) {
+        setSelectedClient(existing);
+      } else if (supabase) {
+        const { data } = await supabase.from('profiles').select('id, full_name, phone').eq('id', selectedClientId).maybeSingle();
+        if (data) setSelectedClient({ id: data.id, name: data.full_name || 'Cliente', phone: data.phone || 'Sem telefone' });
+      }
+    } else {
+      setClientId('');
+      setSelectedClient(null);
+    }
   }
 
-  function openReschedule(item: AdminAppointment) {
+  async function openReschedule(item: AdminAppointment) {
     setEditingId(item.id);
     setClientId(item.clientId);
+    setSelectedClient({ id: item.clientId, name: item.clientName, phone: 'Cliente cadastrado' });
+    if (supabase) {
+      supabase.from('profiles').select('id, full_name, phone').eq('id', item.clientId).maybeSingle().then(({ data }) => {
+        if (data) setSelectedClient({ id: data.id, name: data.full_name || item.clientName, phone: data.phone || 'Sem telefone' });
+      });
+    }
     setServiceId(item.serviceId);
     setBarberId(item.barberId);
     setDate(brasiliaDateIso(item.startsAt));
@@ -295,7 +313,7 @@ export default function AdminScreen() {
   async function saveAppointment() {
     const service = serviceOptions.find((item) => item.id === serviceId);
     const barber = barberOptions.find((item) => item.id === barberId);
-    if (!service || !barber || !clientId) return;
+    if (!service || !barber || !clientId) return setNotice('Selecione cliente, serviço e profissional.');
     setSaving(true);
     setNotice('');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) {
@@ -304,15 +322,28 @@ export default function AdminScreen() {
       return;
     }
     const startsAt = brasiliaDateTimeToIso(date, time);
-    const endsAt = new Date(
-      new Date(startsAt).getTime() + ((service.duration ?? 45) + Number(ruleBuffer || 0)) * 60000,
-    ).toISOString();
+    const startsAtMs = new Date(startsAt).getTime();
+
+    // Check effective duration including duration_override_minutes from barber_services
+    let durationMinutes = service.duration ?? 45;
+    if (supabase) {
+      const { data: bsData } = await supabase
+        .from('barber_services')
+        .select('duration_override_minutes')
+        .eq('barber_id', barberId)
+        .eq('service_id', serviceId)
+        .maybeSingle();
+      if (bsData?.duration_override_minutes) {
+        durationMinutes = bsData.duration_override_minutes;
+      }
+    }
+    const endsAt = new Date(startsAtMs + (durationMinutes + Number(ruleBuffer || 0)) * 60000).toISOString();
 
     if (supabase) {
       const original = editingId ? appointments.find((item) => item.id === editingId) : undefined;
       const unchangedSlot = Boolean(
         original &&
-          new Date(original.startsAt).getTime() === new Date(startsAt).getTime() &&
+          new Date(original.startsAt).getTime() === startsAtMs &&
           original.barberId === barberId &&
           original.serviceId === serviceId,
       );
@@ -325,24 +356,55 @@ export default function AdminScreen() {
           p_barber_slug: barber.slug,
           p_party_size: 1,
         });
-        const available =
-          !availability.error && (availability.data ?? []).some((slot) => slot.starts_at === startsAt);
-        if (!available) {
+
+        if (availability.error) {
+          setSaving(false);
+          setNotice(`Falha ao consultar disponibilidade no servidor: ${availability.error.message}`);
+          return;
+        }
+
+        const isAvailableInRpc = (availability.data ?? []).some(
+          (slot: Record<string, unknown>) => new Date(String(slot.starts_at)).getTime() === startsAtMs,
+        );
+
+        let isAvailable = isAvailableInRpc;
+
+        // Auto-conflict handling when rescheduling:
+        // If editingId exists and slot wasn't returned by RPC because of original appointment's own overlap,
+        // verify if any OTHER active appointment (where id <> editingId) overlaps with the desired range.
+        if (!isAvailable && editingId) {
+          const { data: overlapData, error: overlapError } = await supabase
+            .from('appointments')
+            .select('id')
+            .eq('barber_id', barberId)
+            .in('status', ['pending', 'confirmed', 'checked_in', 'in_service'])
+            .neq('id', editingId)
+            .lt('starts_at', endsAt)
+            .gt('ends_at', startsAt);
+
+          if (!overlapError && (!overlapData || overlapData.length === 0)) {
+            isAvailable = true;
+          }
+        }
+
+        if (!isAvailable) {
           setSaving(false);
           setNotice('Este horário não está disponível pelas regras atuais da barbearia.');
           return;
         }
       }
+
       const unit = await supabase.from('units').select('id').eq('slug', 'betim').single();
       if (unit.error || !unit.data) {
         setSaving(false);
         setNotice('A unidade Betim não está disponível.');
         return;
       }
+
       const result = editingId
         ? await supabase
             .from('appointments')
-            .update({ starts_at: startsAt, ends_at: endsAt, barber_id: barberId, service_id: serviceId })
+            .update({ starts_at: startsAt, ends_at: endsAt, barber_id: barberId, service_id: serviceId, client_id: clientId })
             .eq('id', editingId)
         : await supabase.from('appointments').insert({
             client_id: clientId,
@@ -356,6 +418,7 @@ export default function AdminScreen() {
             party_size: 1,
             unit_price_cents: Math.round((service.price ?? 0) * 100),
           });
+
       if (result.error) {
         setSaving(false);
         setNotice(
@@ -367,8 +430,8 @@ export default function AdminScreen() {
       }
       await loadRemote();
     } else {
-      const client = clients.find((item) => item.id === clientId);
-      const barber = barberOptions.find((item) => item.id === barberId);
+      const client = selectedClient ?? clients.find((item) => item.id === clientId);
+      const barberOpt = barberOptions.find((item) => item.id === barberId);
       const value: AdminAppointment = {
         id: editingId ?? `demo-${Date.now()}`,
         startsAt,
@@ -378,8 +441,8 @@ export default function AdminScreen() {
         serviceId,
         serviceName: service.name,
         barberId,
-        barberName: barber?.name ?? 'Profissional',
-        duration: service.duration ?? 45,
+        barberName: barberOpt?.name ?? 'Profissional',
+        duration: durationMinutes,
         partySize: 1,
         totalCents: Math.round((service.price ?? 0) * 100),
         paymentStatus: 'pending',
@@ -390,6 +453,7 @@ export default function AdminScreen() {
           : [...current, value].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
       );
     }
+
     setSaving(false);
     setShowEditor(false);
     setNotice(editingId ? 'Horário reagendado.' : 'Atendimento criado pela recepção.');
@@ -672,6 +736,7 @@ export default function AdminScreen() {
                 showEditor={showEditor}
                 editingId={editingId}
                 clients={clients}
+                selectedClient={selectedClient}
                 serviceOptions={serviceOptions}
                 barberOptions={barberOptions}
                 clientId={clientId}
@@ -683,7 +748,8 @@ export default function AdminScreen() {
                 setMode={setMode}
                 moveDate={moveDate}
                 openCreate={openCreate}
-                setClientId={setClientId}
+                onSelectClient={handleSelectClient}
+                onClearClient={handleClearClient}
                 setServiceId={setServiceId}
                 setBarberId={setBarberId}
                 setDate={setDate}
