@@ -817,11 +817,276 @@ export type Database = {
           },
         ]
       }
+      viks_club_plans: {
+        Row: {
+          active: boolean
+          allowed_days: string[]
+          barber_id: string | null
+          billing_period: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          price: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          allowed_days?: string[]
+          barber_id?: string | null
+          billing_period?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          price?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          allowed_days?: string[]
+          barber_id?: string | null
+          billing_period?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          price?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      viks_club_plan_benefits: {
+        Row: {
+          active: boolean
+          benefit_type: string
+          created_at: string
+          description: string | null
+          discount_percent: number | null
+          id: string
+          plan_id: string
+          quantity: number
+          service_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          benefit_type?: string
+          created_at?: string
+          description?: string | null
+          discount_percent?: number | null
+          id?: string
+          plan_id: string
+          quantity?: number
+          service_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          benefit_type?: string
+          created_at?: string
+          description?: string | null
+          discount_percent?: number | null
+          id?: string
+          plan_id?: string
+          quantity?: number
+          service_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      viks_club_subscriptions: {
+        Row: {
+          barber_id: string | null
+          canceled_at: string | null
+          client_id: string
+          created_at: string
+          created_by: string | null
+          current_period_end: string
+          current_period_start: string
+          id: string
+          paused_at: string | null
+          plan_id: string
+          starts_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          barber_id?: string | null
+          canceled_at?: string | null
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          current_period_end: string
+          current_period_start?: string
+          id?: string
+          paused_at?: string | null
+          plan_id: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          barber_id?: string | null
+          canceled_at?: string | null
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          paused_at?: string | null
+          plan_id?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      viks_club_subscription_benefits: {
+        Row: {
+          benefit_type: string
+          created_at: string
+          discount_percent: number | null
+          id: string
+          period_end: string
+          period_start: string
+          plan_benefit_id: string | null
+          quantity_granted: number
+          quantity_used: number
+          service_id: string | null
+          subscription_id: string
+          updated_at: string
+        }
+        Insert: {
+          benefit_type?: string
+          created_at?: string
+          discount_percent?: number | null
+          id?: string
+          period_end: string
+          period_start: string
+          plan_benefit_id?: string | null
+          quantity_granted?: number
+          quantity_used?: number
+          service_id?: string | null
+          subscription_id: string
+          updated_at?: string
+        }
+        Update: {
+          benefit_type?: string
+          created_at?: string
+          discount_percent?: number | null
+          id?: string
+          period_end?: string
+          period_start?: string
+          plan_benefit_id?: string | null
+          quantity_granted?: number
+          quantity_used?: number
+          service_id?: string | null
+          subscription_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      viks_club_benefit_usage: {
+        Row: {
+          appointment_id: string | null
+          client_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          quantity: number
+          subscription_benefit_id: string
+          used_at: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          quantity?: number
+          subscription_benefit_id: string
+          used_at?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          quantity?: number
+          subscription_benefit_id?: string
+          used_at?: string
+        }
+        Relationships: []
+      }
+      loyalty_transactions: {
+        Row: {
+          appointment_id: string | null
+          client_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          points: number
+          reason: string
+          type: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          points: number
+          reason: string
+          type: string
+        }
+        Update: {
+          appointment_id?: string | null
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          points?: number
+          reason?: string
+          type?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      activate_viks_club_subscription: {
+        Args: { p_client_id: string; p_plan_id: string; p_months?: number; p_created_by?: string | null }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
+      renew_viks_club_subscription: {
+        Args: { p_subscription_id: string; p_months?: number; p_created_by?: string | null }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
+      update_viks_club_subscription_status: {
+        Args: { p_subscription_id: string; p_new_status: string; p_created_by?: string | null }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
+      consume_viks_club_benefit: {
+        Args: { p_subscription_benefit_id: string; p_appointment_id?: string | null; p_quantity?: number; p_created_by?: string | null; p_notes?: string | null }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
+      manage_loyalty_points: {
+        Args: { p_client_id: string; p_type: string; p_points: number; p_reason: string; p_appointment_id?: string | null; p_created_by?: string | null }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
       activate_due_promotions: {
         Args: { p_limit?: number }
         Returns: {

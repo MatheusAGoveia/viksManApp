@@ -1,5 +1,7 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, Text, View } from 'react-native';
 
+import { colors } from '@/constants/theme';
 import { formatCurrency } from '@/data/catalog';
 import { LabeledInput } from '../components/LabeledInput';
 import { styles } from '../styles';
@@ -23,6 +25,7 @@ type CatalogTabProps = {
   serviceOptions: Option[];
   barberOptions: Option[];
   toggleCatalog: (kind: 'services' | 'barbers', item: Option) => void;
+  onManageViksClubPlans?: () => void;
   wide?: boolean;
 };
 
@@ -44,6 +47,7 @@ export function CatalogTab({
   serviceOptions,
   barberOptions,
   toggleCatalog,
+  onManageViksClubPlans,
   wide,
 }: CatalogTabProps) {
   return (
@@ -53,6 +57,25 @@ export function CatalogTab({
           <Text style={styles.eyebrow}>CATÁLOGO E EQUIPE</Text>
           <Text style={styles.pageTitle}>O que a Viks oferece.</Text>
         </View>
+        {onManageViksClubPlans ? (
+          <Pressable
+            onPress={onManageViksClubPlans}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              backgroundColor: colors.blue,
+              paddingVertical: 10,
+              paddingHorizontal: 16,
+              borderRadius: 6,
+            }}
+          >
+            <Ionicons name="sparkles" size={16} color={colors.white} />
+            <Text style={{ color: colors.white, fontFamily: 'monospace', fontSize: 11, fontWeight: '800' }}>
+              PLANOS VIKS CLUB
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={[styles.operationGrid, wide && styles.operationGridWide]}>

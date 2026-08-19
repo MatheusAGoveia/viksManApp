@@ -7,6 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, layout } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useBookings } from '@/context/booking-context';
+import { fetchClientSubscription, fetchLoyaltyTransactions } from '@/features/viks-club/services/viks-club-service';
+import type { LoyaltyTransaction, ViksClubSubscription } from '@/features/viks-club/types';
+import { ClientViksClubModal } from '@/features/viks-club/components/ClientViksClubModal';
 import { barbers as catalogBarbers } from '@/data/catalog';
 import { registerPushNotifications } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
@@ -25,8 +28,11 @@ export default function ProfileScreen() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [whatsappOverride, setWhatsappOverride] = useState<boolean>();
   const [marketingOverride, setMarketingOverride] = useState<boolean>();
-  const [preferredBarberOverride, setPreferredBarberOverride] = useState<string | null | undefined>();
-  const [silentServiceOverride, setSilentServiceOverride] = useState<boolean>();
+  const [preferredBarberOverride, setPreferredBarberOverride] = useState<string | null>(null);
+  const [silentServiceOverride, setSilentServiceOverride] = useState<boolean | null>(null);
+  const [clientSub, setClientSub] = useState<ViksClubSubscription | null>(null);
+  const [loyaltyTxs, setLoyaltyTxs] = useState<LoyaltyTransaction[]>([]);
+  const [clientClubModalVisible, setClientClubModalVisible] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [busy, setBusy] = useState(false);
   const [availableBarbers, setAvailableBarbers] = useState<BarberOption[]>([]);
@@ -37,6 +43,13 @@ export default function ProfileScreen() {
   const marketingEnabled = marketingOverride ?? auth.profile?.marketingConsent ?? false;
   const currentPreferredBarberId = preferredBarberOverride !== undefined ? preferredBarberOverride : (auth.profile?.preferredBarberId ?? null);
   const silentServiceEnabled = silentServiceOverride ?? auth.profile?.prefersSilentService ?? false;
+
+  useEffect(() => {
+    if (auth.profile?.id) {
+      fetchClientSubscription(auth.profile.id).then(setClientSub).catch(() => undefined);
+      fetchLoyaltyTransactions(auth.profile.id).then(setLoyaltyTxs).catch(() => undefined);
+    }
+  }, [auth.profile?.id]);
 
   useEffect(() => {
     if (supabase) {
@@ -208,7 +221,112 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          <SectionTitle index={editing ? '03' : '02'} title="ATENDIMENTO" />
+          <SectionTitle index={editing ? '03' : '02'} title="VIKS CLUB" />
+          <View style={styles.listCard}>
+            {clientSub && (clientSub.status === 'active' || clientSub.status === 'paused') ? (
+              <View style={styles.clubCard}>
+                <View style={styles.clubHeader}>
+                  <View>
+                    <Text style={styles.clubPlanName}>{clientSub.planName || 'Viks Club Premium'}</Text>
+                    <Text style={styles.clubPeriod}>Vigência: {new Date(clientSub.currentPeriodStart).toLocaleDateString('pt-BR')} até {new Date(clientSub.currentPeriodEnd).toLocaleDateString('pt-BR')}</Text>
+                  </View>
+                  <View style={[styles.clubStatusBadge, clientSub.status === 'paused' && { backgroundColor: '#FFF3E0' }]}>
+                    <Text style={[styles.clubStatusText, clientSub.status === 'paused' && { color: '#E65100' }]}>
+                      {clientSub.status === 'active' ? 'ATIVO' : 'PAUSADO'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.clubSectionTitle}>BENEFÍCIOS DO PERÍODO</Text>
+                <View style={styles.clubBenefitsList}>
+                  {(clientSub.benefits || []).map((b) => {
+                    const avail = Math.max(0, b.quantityGranted - b.quantityUsed);
+                    const label = b.serviceId === 'cut' ? 'Cortes' : b.serviceId === 'beard' ? 'Barbas' : 'Desconto';
+                    return (
+                      <View key={b.id} style={styles.clubBenefitRow}>
+                        <Text style={styles.clubBenefitLabel}>{label}</Text>
+                        <Text style={styles.clubBenefitMeter}>{b.quantityUsed} de {b.quantityGranted} utilizado ({avail} disponível)</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Pressable
+                  onPress={() => router.push('/viks-club')}
+                  style={{
+                    marginTop: 14,
+                    height: 42,
+                    backgroundColor: colors.blue,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ color: colors.white, fontFamily: fonts.sans, fontSize: 10, fontWeight: '800', letterSpacing: 1 }}>
+                    GERENCIAR MINHA ASSINATURA
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.noClubCard}>
+                <Ionicons name="sparkles-outline" color={colors.blue} size={24} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.noClubTitle}>Viks Club</Text>
+                  <Text style={styles.noClubText}>Você ainda não possui um plano ativo. Clique no botão abaixo para conhecer os planos e assinar!</Text>
+                  <Pressable
+                    onPress={() => router.push('/viks-club')}
+                    style={{
+                      marginTop: 10,
+                      height: 38,
+                      backgroundColor: colors.blue,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text style={{ color: colors.white, fontFamily: fonts.sans, fontSize: 9, fontWeight: '800', letterSpacing: 1 }}>
+                      VER PLANOS E ASSINAR
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <SectionTitle index={editing ? '04' : '03'} title="PONTOS DE FIDELIDADE" />
+          <View style={styles.listCard}>
+            <View style={styles.loyaltyHeader}>
+              <View style={styles.loyaltyIconBox}><Ionicons name="ribbon-outline" color={colors.blue} size={22} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.loyaltyBalanceLabel}>SEU SALDO</Text>
+                <Text style={styles.loyaltyBalanceValue}>{(auth.profile?.viksPointsBalance ?? 0).toLocaleString('pt-BR')} pts</Text>
+              </View>
+            </View>
+
+            {loyaltyTxs.length > 0 ? (
+              <View style={styles.loyaltyTxList}>
+                <Text style={styles.loyaltyTxTitle}>EXTRATO RECENTE</Text>
+                {loyaltyTxs.slice(0, 5).map((tx) => {
+                  const isPositive = tx.type === 'earn' || tx.type === 'adjustment';
+                  return (
+                    <View key={tx.id} style={styles.loyaltyTxRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.loyaltyTxReason}>{tx.reason}</Text>
+                        <Text style={styles.loyaltyTxDate}>{new Date(tx.createdAt).toLocaleDateString('pt-BR')}</Text>
+                      </View>
+                      <Text style={[styles.loyaltyTxPts, isPositive ? styles.txEarn : styles.txRedeem]}>
+                        {isPositive ? '+' : '-'}{tx.points} pts
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <SectionTitle index={editing ? '05' : '04'} title="ATENDIMENTO" />
           <View style={styles.listCard}>
             <View style={styles.prefHeaderRow}>
               <View style={styles.rowIcon}><Ionicons name="person-outline" color={colors.ink} size={19} /></View>
@@ -255,7 +373,7 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          <SectionTitle index={editing ? '04' : '03'} title="CONTA E PRIVACIDADE" />
+          <SectionTitle index={editing ? '06' : '05'} title="CONTA E PRIVACIDADE" />
           <View style={styles.accountCard}>
             <Text style={styles.accountText}>{auth.configured ? 'Sua agenda acompanha você no aplicativo, no site e na recepção.' : 'No modo demonstração, os horários ficam somente neste dispositivo.'}</Text>
             {auth.user ? <><Pressable onPress={auth.signOut} style={styles.outlineButton}><Text style={styles.outlineText}>SAIR DESTA CONTA</Text></Pressable><Pressable onPress={confirmDelete} style={styles.dangerButton}><Text style={styles.dangerText}>EXCLUIR MINHA CONTA</Text></Pressable></> : !auth.configured ? <Pressable onPress={clearBookings} style={styles.outlineButton}><Text style={styles.outlineText}>LIMPAR DADOS DE DEMONSTRAÇÃO</Text></Pressable> : null}
@@ -263,6 +381,19 @@ export default function ProfileScreen() {
         </View>
         <Text style={styles.version}>VIKS MAN · MVP 0.3.0</Text>
       </SafeAreaView>
+
+      {auth.profile?.id ? (
+        <ClientViksClubModal
+          visible={clientClubModalVisible}
+          clientId={auth.profile.id}
+          onClose={() => setClientClubModalVisible(false)}
+          onUpdated={() => {
+            if (auth.profile?.id) {
+              fetchClientSubscription(auth.profile.id).then(setClientSub).catch(() => undefined);
+            }
+          }}
+        />
+      ) : null}
     </ScrollView>
   );
 }
@@ -297,6 +428,32 @@ const styles = StyleSheet.create({
   barberChipSelected: { backgroundColor: colors.blue, borderColor: colors.blue },
   barberChipText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 11, fontWeight: '700' },
   barberChipTextSelected: { color: colors.white },
+  clubCard: { paddingVertical: 14 },
+  clubHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  clubPlanName: { fontFamily: fonts.sans, fontSize: 15, fontWeight: '800', color: colors.ink },
+  clubPeriod: { fontFamily: fonts.sans, fontSize: 10, color: colors.muted, marginTop: 2 },
+  clubStatusBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
+  clubStatusText: { fontFamily: fonts.mono, fontSize: 8, fontWeight: '900', color: '#2E7D32' },
+  clubSectionTitle: { fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', color: colors.blue, letterSpacing: 0.8, marginTop: 12, marginBottom: 6 },
+  clubBenefitsList: { gap: 6 },
+  clubBenefitRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.line },
+  clubBenefitLabel: { fontFamily: fonts.sans, fontSize: 12, fontWeight: '700', color: colors.ink },
+  clubBenefitMeter: { fontFamily: fonts.mono, fontSize: 10, color: colors.muted },
+  noClubCard: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  noClubTitle: { fontFamily: fonts.sans, fontSize: 14, fontWeight: '800', color: colors.ink },
+  noClubText: { fontFamily: fonts.sans, fontSize: 11, color: colors.muted, lineHeight: 15, marginTop: 2 },
+  loyaltyHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  loyaltyIconBox: { width: 42, height: 42, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center' },
+  loyaltyBalanceLabel: { fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', color: colors.blue, letterSpacing: 0.8 },
+  loyaltyBalanceValue: { fontFamily: fonts.sans, fontSize: 20, fontWeight: '900', color: colors.ink, marginTop: 2 },
+  loyaltyTxList: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12, paddingBottom: 12, gap: 6 },
+  loyaltyTxTitle: { fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', color: colors.blue, letterSpacing: 0.8, marginBottom: 4 },
+  loyaltyTxRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  loyaltyTxReason: { fontFamily: fonts.sans, fontSize: 11, fontWeight: '700', color: colors.ink },
+  loyaltyTxDate: { fontFamily: fonts.mono, fontSize: 8, color: colors.muted },
+  loyaltyTxPts: { fontFamily: fonts.sans, fontSize: 12, fontWeight: '800' },
+  txEarn: { color: '#2E7D32' },
+  txRedeem: { color: '#D32F2F' },
   formCard: { backgroundColor: colors.white, padding: 18, gap: 16 }, field: { gap: 7 }, fieldLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800', letterSpacing: 1 }, input: { height: 50, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, color: colors.ink, fontFamily: fonts.sans, fontSize: 14 }, formActions: { flexDirection: 'row', gap: 8, marginTop: 4 }, secondaryButton: { flex: 1, height: 48, borderWidth: 1, borderColor: colors.ink, alignItems: 'center', justifyContent: 'center' }, secondaryText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 9, fontWeight: '800', letterSpacing: 1 }, primaryButton: { flex: 1, height: 48, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' }, primaryText: { color: colors.white, fontFamily: fonts.sans, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   accountCard: { padding: 18, backgroundColor: colors.white }, accountText: { color: colors.muted, fontFamily: fonts.sans, fontSize: 11, lineHeight: 17 }, outlineButton: { height: 46, marginTop: 16, borderWidth: 1, borderColor: colors.ink, alignItems: 'center', justifyContent: 'center' }, outlineText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 1 }, dangerButton: { minHeight: 44, marginTop: 8, alignItems: 'center', justifyContent: 'center' }, dangerText: { color: colors.danger, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 1 }, version: { color: colors.muted, fontFamily: fonts.mono, fontSize: 7, letterSpacing: 1, textAlign: 'center', marginTop: 36 }, pressed: { opacity: 0.66 },
 });

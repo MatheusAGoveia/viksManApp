@@ -12,6 +12,7 @@ type AppointmentRowProps = {
   onPaid: () => void;
   onReschedule: () => void;
   onStatus: (status: 'cancelled' | 'completed' | 'no_show') => void;
+  onConsumeBenefit?: () => void;
 };
 
 const statusLabel: Record<string, string> = {
@@ -23,7 +24,7 @@ const statusLabel: Record<string, string> = {
   no_show: 'NÃO COMPARECEU',
 };
 
-export function AppointmentRow({ item, onPaid, onReschedule, onStatus }: AppointmentRowProps) {
+export function AppointmentRow({ item, onPaid, onReschedule, onStatus, onConsumeBenefit }: AppointmentRowProps) {
   const inactive = ['cancelled', 'completed', 'no_show'].includes(item.status);
 
   return (
@@ -55,6 +56,12 @@ export function AppointmentRow({ item, onPaid, onReschedule, onStatus }: Appoint
         </Text>
         {!inactive ? (
           <View style={styles.appointmentActions}>
+            {onConsumeBenefit ? (
+              <Pressable onPress={onConsumeBenefit} style={styles.paidButton}>
+                <Ionicons name="sparkles-outline" color={colors.blue} size={14} />
+                <Text style={[styles.paidText, { color: colors.blue }]}>USAR BENEFÍCIO VIKS CLUB</Text>
+              </Pressable>
+            ) : null}
             {item.paymentStatus !== 'paid' ? (
               <Pressable onPress={onPaid} style={styles.paidButton}>
                 <Ionicons name="logo-usd" color={colors.success} size={14} />

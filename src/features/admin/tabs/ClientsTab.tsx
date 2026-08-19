@@ -10,9 +10,11 @@ import type { Client } from '../types';
 
 type ClientsTabProps = {
   onSelectClient: (clientId: string) => void;
+  onManageSubscription?: (client: Client) => void;
+  onManageLoyalty?: (client: Client) => void;
 };
 
-export function ClientsTab({ onSelectClient }: ClientsTabProps) {
+export function ClientsTab({ onSelectClient, onManageSubscription, onManageLoyalty }: ClientsTabProps) {
   const [search, setSearch] = useState('');
   const [clientsList, setClientsList] = useState<Client[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -24,7 +26,6 @@ export function ClientsTab({ onSelectClient }: ClientsTabProps) {
     setLoading(true);
 
     if (supabase) {
-      // 1. Fetch exact total count of client profiles
       const { count } = await supabase
         .from('profiles')
         .select('id', { count: 'exact', head: true })
@@ -34,7 +35,6 @@ export function ClientsTab({ onSelectClient }: ClientsTabProps) {
         setTotalCount(count);
       }
 
-      // 2. Fetch paginated / searched clients (limit 20)
       let query = supabase
         .from('profiles')
         .select('id, full_name, phone')
@@ -59,7 +59,6 @@ export function ClientsTab({ onSelectClient }: ClientsTabProps) {
         setClientsList([]);
       }
     } else {
-      // Demo mode fallback
       setTotalCount(demoClients.length);
       const filtered = demoClients.filter(
         (client) =>
@@ -143,10 +142,24 @@ export function ClientsTab({ onSelectClient }: ClientsTabProps) {
                 <Text style={styles.clientName}>{client.name}</Text>
                 <Text style={styles.clientPhone}>{client.phone}</Text>
               </View>
-              <Pressable onPress={() => onSelectClient(client.id)} style={styles.clientAction}>
-                <Text style={styles.clientActionText}>AGENDAR</Text>
-                <Ionicons name="arrow-forward" color={colors.blue} size={16} />
-              </Pressable>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                {onManageSubscription ? (
+                  <Pressable onPress={() => onManageSubscription(client)} style={[styles.clientAction, { backgroundColor: colors.soft, paddingHorizontal: 8 }]}>
+                    <Ionicons name="sparkles-outline" color={colors.blue} size={14} />
+                    <Text style={[styles.clientActionText, { color: colors.ink }]}>CLUB</Text>
+                  </Pressable>
+                ) : null}
+                {onManageLoyalty ? (
+                  <Pressable onPress={() => onManageLoyalty(client)} style={[styles.clientAction, { backgroundColor: colors.soft, paddingHorizontal: 8 }]}>
+                    <Ionicons name="ribbon-outline" color={colors.blue} size={14} />
+                    <Text style={[styles.clientActionText, { color: colors.ink }]}>PONTOS</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable onPress={() => onSelectClient(client.id)} style={styles.clientAction}>
+                  <Text style={styles.clientActionText}>AGENDAR</Text>
+                  <Ionicons name="arrow-forward" color={colors.blue} size={16} />
+                </Pressable>
+              </View>
             </View>
           ))
         )}

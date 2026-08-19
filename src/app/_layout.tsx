@@ -80,6 +80,13 @@ function AppTabs() {
           }}
         />
         <Tabs.Screen
+          name="viks-club"
+          options={{
+            title: 'Viks Club',
+            tabBarIcon: ({ color, size }) => <Ionicons name="sparkles-outline" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
           name="products"
           options={{
             title: 'Produtos',

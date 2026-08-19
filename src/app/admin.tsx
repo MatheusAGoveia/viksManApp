@@ -13,6 +13,9 @@ import { AdminTopbar } from '@/features/admin/components/AdminTopbar';
 import { NoticeBanner } from '@/features/admin/components/NoticeBanner';
 import { demoAppointments, demoClients, joined } from '@/features/admin/helpers';
 import { styles } from '@/features/admin/styles';
+import { ClientSubscriptionModal } from '@/features/admin/components/ClientSubscriptionModal';
+import { LoyaltyPointsModal } from '@/features/admin/components/LoyaltyPointsModal';
+import { ViksClubPlanModal } from '@/features/admin/components/ViksClubPlanModal';
 import { AgendaTab } from '@/features/admin/tabs/AgendaTab';
 import { CatalogTab } from '@/features/admin/tabs/CatalogTab';
 import { ClientsTab } from '@/features/admin/tabs/ClientsTab';
@@ -110,6 +113,9 @@ export default function AdminScreen() {
   const [ruleNotice, setRuleNotice] = useState('60');
   const [ruleWindow, setRuleWindow] = useState('60');
   const [pixKey, setPixKey] = useState('matheusaagd2@gmail.com');
+  const [plansModalVisible, setPlansModalVisible] = useState(false);
+  const [subModalClient, setSubModalClient] = useState<Client | null>(null);
+  const [loyaltyModalClient, setLoyaltyModalClient] = useState<Client | null>(null);
 
   const handleSelectClient = useCallback((client: Client) => {
     setClientId(client.id);
@@ -855,12 +861,40 @@ export default function AdminScreen() {
             ) : null}
 
             {tab === 'clients' ? (
-              <ClientsTab
-                onSelectClient={(selectedClientId) => {
-                  setTab('agenda');
-                  openCreate(selectedClientId);
-                }}
-              />
+              <>
+                {auth.isManager ? (
+                  <View style={{ marginBottom: 16 }}>
+                    <Pressable
+                      onPress={() => setPlansModalVisible(true)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        backgroundColor: colors.blue,
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        borderRadius: 6,
+                        alignSelf: 'flex-start',
+                      }}
+                    >
+                      <Ionicons name="sparkles" size={16} color={colors.white} />
+                      <Text style={{ color: colors.white, fontFamily: 'monospace', fontSize: 11, fontWeight: '800' }}>
+                        GERENCIAR PLANOS DO VIKS CLUB
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                <ClientsTab
+                  onSelectClient={(selectedClientId) => {
+                    setTab('agenda');
+                    openCreate(selectedClientId);
+                  }}
+                  onManageSubscription={auth.isManager ? (client) => setSubModalClient(client) : undefined}
+                  onManageLoyalty={auth.isManager ? (client) => setLoyaltyModalClient(client) : undefined}
+                />
+              </>
             ) : null}
 
             {tab === 'catalog' ? (
@@ -882,6 +916,7 @@ export default function AdminScreen() {
                 serviceOptions={serviceOptions}
                 barberOptions={barberOptions}
                 toggleCatalog={toggleCatalog}
+                onManageViksClubPlans={auth.isManager ? () => setPlansModalVisible(true) : undefined}
                 wide={wide}
               />
             ) : null}
@@ -941,6 +976,28 @@ export default function AdminScreen() {
           </ScrollView>
         </View>
       </SafeAreaView>
+
+      {auth.isManager ? (
+        <ViksClubPlanModal visible={plansModalVisible} onClose={() => setPlansModalVisible(false)} />
+      ) : null}
+
+      {subModalClient ? (
+        <ClientSubscriptionModal
+          visible={Boolean(subModalClient)}
+          clientId={subModalClient.id}
+          clientName={subModalClient.name}
+          onClose={() => setSubModalClient(null)}
+        />
+      ) : null}
+
+      {loyaltyModalClient ? (
+        <LoyaltyPointsModal
+          visible={Boolean(loyaltyModalClient)}
+          clientId={loyaltyModalClient.id}
+          clientName={loyaltyModalClient.name}
+          onClose={() => setLoyaltyModalClient(null)}
+        />
+      ) : null}
     </View>
   );
 }

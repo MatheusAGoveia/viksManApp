@@ -11,9 +11,11 @@ import { colors, fonts, layout } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useBookings } from '@/context/booking-context';
 import { barbers, formatBookingDate, formatCurrency, makeDateOptions, services, timeSlots } from '@/data/catalog';
+import { fetchClientSubscription } from '@/features/viks-club/services/viks-club-service';
+import type { ViksClubSubscription } from '@/features/viks-club/types';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { getNextAvailableSlot, type NextAvailableSlot } from '@/lib/availability';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 
 function paramValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -229,6 +231,16 @@ export default function BookingScreen() {
   const combinedPrice = groupCalculations.totalPrice;
 
   const barberId = barbers.some((item) => item.id === incomingBarber) ? incomingBarber : undefined;
+
+  const [clientSub, setClientSub] = useState<ViksClubSubscription | null>(null);
+
+  useEffect(() => {
+    if (auth.profile?.id) {
+      fetchClientSubscription(auth.profile.id).then(setClientSub).catch(() => undefined);
+    }
+  }, [auth.profile?.id]);
+
+  const assignedBarberObj = barbers.find((b) => b.id === clientSub?.barberId);
 
   const selectedBarber = barbers.find((barber) => barber.id === barberId);
   const canConfirm = Boolean(selectedServiceIds.length > 0 && barberId && date && time && !submitting);
@@ -534,9 +546,20 @@ export default function BookingScreen() {
 
         <View style={[styles.section, isWide && styles.sectionWide]}>
           <View style={styles.sectionHeading}><Text style={styles.step}>03</Text><Text style={styles.sectionTitle}>Com quem?</Text></View>
+          
+          {clientSub && clientSub.status === 'active' && clientSub.barberId && barberId && barberId !== clientSub.barberId ? (
+            <View style={{ backgroundColor: '#FFF3E0', borderWidth: 1, borderColor: '#FFE0B2', padding: 12, borderRadius: 6, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Ionicons name="alert-circle-outline" size={20} color="#E65100" />
+              <Text style={{ fontFamily: fonts.sans, fontSize: 11, color: '#E65100', flex: 1, lineHeight: 16 }}>
+                Atenção: Sua assinatura do Viks Club é exclusiva com <Text style={{ fontWeight: '800' }}>{assignedBarberObj?.name || 'seu barbeiro do plano'}</Text>. Agendamentos com outros profissionais serão cobrados como avulso.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.barberList}>
             {barbers.map((barber) => {
               const selected = barber.id === barberId;
+              const isAssignedToPlan = clientSub?.status === 'active' && clientSub?.barberId === barber.id;
               return (
                 <Pressable
                   accessibilityRole="radio"
@@ -546,7 +569,13 @@ export default function BookingScreen() {
                   style={({ pressed }) => [styles.barberCard, selected && styles.selectedBarber, pressed && styles.pressed]}>
                   <View style={[styles.barberAvatar, selected && styles.selectedAvatar]}><Text style={[styles.barberInitials, selected && styles.selectedText]}>{barber.initials}</Text></View>
                   <View style={styles.barberCopy}>
-                    <Text style={styles.barberChair}>{barber.chair}</Text>
+                    {isAssignedToPlan ? (
+                      <Text style={{ color: colors.blue, fontFamily: fonts.mono, fontSize: 8, fontWeight: '900', letterSpacing: 0.8 }}>
+                        BARBEIRO DO SEU PLANO VIKS CLUB
+                      </Text>
+                    ) : (
+                      <Text style={styles.barberChair}>{barber.chair}</Text>
+                    )}
                     <Text style={styles.barberName}>{barber.name}</Text>
                     <Text style={styles.barberSpecialties}>{barber.specialties}</Text>
                   </View>
