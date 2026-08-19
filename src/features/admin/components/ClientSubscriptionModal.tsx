@@ -4,6 +4,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View
 
 import { colors, fonts } from '@/constants/theme';
 import { barbers } from '@/data/catalog';
+import { supabase } from '@/lib/supabase';
 import {
   activateSubscription,
   fetchClientSubscription,
@@ -29,6 +30,9 @@ export function ClientSubscriptionModal({ visible, clientId, clientName, onClose
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [selectedBarberId, setSelectedBarberId] = useState<string>(barbers[0]?.id || 'victor');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [clientAppointments, setClientAppointments] = useState<
+    { id: string; startsAt: string; serviceName: string; barberName: string; status: string }[]
+  >([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -42,6 +46,33 @@ export function ClientSubscriptionModal({ visible, clientId, clientName, onClose
     if (availablePlans.length > 0) {
       setSelectedPlanId(availablePlans[0].id);
     }
+
+    if (supabase && clientId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)) {
+      const { data: appts } = await supabase
+        .from('appointments')
+        .select('id, starts_at, status, service:services(name), barber:barbers(name)')
+        .eq('client_id', clientId)
+        .gte('starts_at', new Date().toISOString())
+        .in('status', ['pending', 'confirmed', 'checked_in', 'in_service'])
+        .order('starts_at');
+
+      if (appts) {
+        setClientAppointments(
+          appts.map((a: any) => ({
+            id: String(a.id),
+            startsAt: String(a.starts_at),
+            serviceName: String(Array.isArray(a.service) ? a.service[0]?.name : a.service?.name || 'Serviço'),
+            barberName: String(Array.isArray(a.barber) ? a.barber[0]?.name : a.barber?.name || 'Profissional'),
+            status: String(a.status),
+          }))
+        );
+      } else {
+        setClientAppointments([]);
+      }
+    } else {
+      setClientAppointments([]);
+    }
+
     setLoading(false);
   }, [clientId]);
 
@@ -160,6 +191,27 @@ export function ClientSubscriptionModal({ visible, clientId, clientName, onClose
                         </View>
                       );
                     })}
+                  </View>
+
+                  <Text style={[styles.benefitsHeader, { marginTop: 12 }]}>AGENDAMENTOS FUTUROS DO CLIENTE ({clientAppointments.length})</Text>
+                  <View style={styles.benefitsList}>
+                    {clientAppointments.length > 0 ? (
+                      clientAppointments.map((apt) => (
+                        <View key={apt.id} style={styles.benefitRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.benefitName}>
+                              {new Date(apt.startsAt).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })} às {new Date(apt.startsAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {apt.serviceName}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.muted }}>Barbeiro: {apt.barberName}</Text>
+                          </View>
+                          <Text style={styles.benefitCount}>CONFIRMADO</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={{ fontSize: 12, color: colors.muted, fontStyle: 'italic', paddingVertical: 4 }}>
+                        Nenhum agendamento futuro encontrado.
+                      </Text>
+                    )}
                   </View>
 
                   <View style={styles.actionGrid}>

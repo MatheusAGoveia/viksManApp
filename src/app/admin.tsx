@@ -301,6 +301,9 @@ export default function AdminScreen() {
   }, [loadRemote]);
 
   const visibleAppointments = useMemo(() => {
+    if (selectedClient) {
+      return appointments.filter((item) => item.clientId === selectedClient.id);
+    }
     if (mode === 'day') {
       return appointments.filter((item) => brasiliaDateIso(item.startsAt) === anchorDate);
     }
@@ -309,7 +312,7 @@ export default function AdminScreen() {
       const dIso = brasiliaDateIso(item.startsAt);
       return dIso >= range.startIso && dIso < range.endIso;
     });
-  }, [anchorDate, appointments, mode]);
+  }, [anchorDate, appointments, mode, selectedClient]);
 
   const occupancy = Math.min(
     100,

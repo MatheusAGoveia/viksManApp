@@ -536,3 +536,101 @@ BEGIN
   RETURN jsonb_build_object('success', true);
 END;
 $$;
+
+-- 8. Enhance private.create_appointment to match service/barber by both slug and UUID id
+CREATE OR REPLACE FUNCTION private.create_appointment(
+  p_unit_slug text,
+  p_service_slug text,
+  p_barber_slug text,
+  p_starts_at timestamptz,
+  p_notes text DEFAULT NULL,
+  p_booked_via text DEFAULT 'app',
+  p_party_size integer DEFAULT 1,
+  p_gratuity_cents integer DEFAULT 0
+)
+RETURNS public.appointments
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_unit public.units;
+  v_service public.services;
+  v_barber_id uuid;
+  v_duration integer;
+  v_unit_price integer;
+  v_end timestamptz;
+  v_result public.appointments;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN RAISE EXCEPTION 'AUTH_REQUIRED'; END IF;
+  IF p_party_size NOT BETWEEN 1 AND 6 THEN RAISE EXCEPTION 'INVALID_PARTY_SIZE'; END IF;
+  IF p_gratuity_cents < 0 OR p_gratuity_cents > 100000 THEN RAISE EXCEPTION 'INVALID_GRATUITY'; END IF;
+
+  SELECT * INTO v_unit FROM public.units WHERE slug = p_unit_slug AND active;
+  IF NOT FOUND THEN RAISE EXCEPTION 'UNIT_NOT_FOUND'; END IF;
+
+  SELECT * INTO v_service FROM public.services WHERE (slug = p_service_slug OR id::text = p_service_slug) AND active LIMIT 1;
+  IF NOT FOUND THEN RAISE EXCEPTION 'SERVICE_NOT_FOUND'; END IF;
+
+  IF p_starts_at < now() + make_interval(mins => v_unit.min_booking_notice_minutes) THEN
+    RAISE EXCEPTION 'MIN_BOOKING_NOTICE';
+  END IF;
+  IF p_starts_at >= now() + make_interval(days => v_unit.max_booking_days) THEN
+    RAISE EXCEPTION 'MAX_BOOKING_WINDOW';
+  END IF;
+
+  SELECT b.id,
+         COALESCE(bs.duration_override_minutes, v_service.duration_minutes),
+         COALESCE(bs.price_override_cents, v_service.price_cents)
+    INTO v_barber_id, v_duration, v_unit_price
+  FROM public.barbers b
+  JOIN public.barber_services bs ON bs.barber_id = b.id AND bs.service_id = v_service.id
+  JOIN public.working_hours wh ON wh.barber_id = b.id
+    AND wh.weekday = EXTRACT(dow FROM (p_starts_at AT TIME ZONE v_unit.timezone))::smallint
+    AND wh.active
+  WHERE b.unit_id = v_unit.id AND b.active
+    AND (p_barber_slug IN ('first', '') OR b.slug = p_barber_slug OR b.id::text = p_barber_slug)
+    AND (p_starts_at AT TIME ZONE v_unit.timezone)::time >= wh.opens_at
+    AND ((p_starts_at AT TIME ZONE v_unit.timezone)::time + make_interval(
+      mins => (COALESCE(bs.duration_override_minutes, v_service.duration_minutes) * p_party_size) + v_unit.default_buffer_minutes
+    )) <= wh.closes_at
+    AND NOT EXISTS (
+      SELECT 1 FROM public.schedule_blocks block
+      WHERE block.barber_id = b.id
+        AND tstzrange(block.starts_at, block.ends_at, '[)') && tstzrange(
+          p_starts_at,
+          p_starts_at + make_interval(mins => (COALESCE(bs.duration_override_minutes, v_service.duration_minutes) * p_party_size) + v_unit.default_buffer_minutes),
+          '[)'
+        )
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM public.appointments a
+      WHERE a.barber_id = b.id
+        AND a.status IN ('pending', 'confirmed', 'checked_in', 'in_service')
+        AND tstzrange(a.starts_at, a.ends_at, '[)') && tstzrange(
+          p_starts_at,
+          p_starts_at + make_interval(mins => (COALESCE(bs.duration_override_minutes, v_service.duration_minutes) * p_party_size) + v_unit.default_buffer_minutes),
+          '[)'
+        )
+    )
+  ORDER BY b.sort_order, b.name
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'SLOT_UNAVAILABLE';
+  END IF;
+
+  v_end := p_starts_at + make_interval(mins => (v_duration * p_party_size) + v_unit.default_buffer_minutes);
+
+  INSERT INTO public.appointments (
+    unit_id, service_id, barber_id, client_id, starts_at, ends_at, notes, booked_via, party_size, unit_price_cents, gratuity_cents
+  ) VALUES (
+    v_unit.id, v_service.id, v_barber_id, auth.uid(), p_starts_at, v_end, p_notes, p_booked_via, p_party_size, v_unit_price, p_gratuity_cents
+  ) RETURNING * INTO v_result;
+
+  PERFORM public.calculate_appointment_totals(v_result.id);
+
+  RETURN v_result;
+END;
+$$;
+
