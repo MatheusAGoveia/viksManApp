@@ -154,7 +154,7 @@ export default function AdminScreen() {
     setLoading(true);
     const range = mode === 'week' ? getWeekRangeIso(anchorDate) : { startIso: anchorDate, endIso: addIsoDays(anchorDate, 1) };
     const queryStartIso = brasiliaDateTimeToIso(range.startIso, '00:00');
-    const queryEndIso = brasiliaDateTimeToIso(range.endIso, '00:00');
+    const queryEndIso = brasiliaDateTimeToIso(addIsoDays(range.startIso, 60), '00:00');
 
     const [
       rawAppointmentResult,
