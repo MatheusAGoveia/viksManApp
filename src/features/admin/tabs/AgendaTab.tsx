@@ -26,6 +26,9 @@ type AgendaTabProps = {
   date: string;
   time: string;
   saving: boolean;
+  availableTimeSlots: string[];
+  slotsLoading: boolean;
+  slotsError: string;
   setMode: (mode: CalendarMode) => void;
   moveDate: (direction: number) => void;
   openCreate: () => void;
@@ -35,6 +38,7 @@ type AgendaTabProps = {
   setBarberId: (id: string) => void;
   setDate: (value: string) => void;
   setTime: (value: string) => void;
+  onRetrySlots?: () => void;
   setShowEditor: (show: boolean) => void;
   saveAppointment: () => void;
   markPaid: (item: AdminAppointment) => void;
@@ -60,6 +64,9 @@ export function AgendaTab({
   date,
   time,
   saving,
+  availableTimeSlots,
+  slotsLoading,
+  slotsError,
   setMode,
   moveDate,
   openCreate,
@@ -69,6 +76,7 @@ export function AgendaTab({
   setBarberId,
   setDate,
   setTime,
+  onRetrySlots,
   setShowEditor,
   saveAppointment,
   markPaid,
@@ -131,12 +139,16 @@ export function AgendaTab({
           time={time}
           editing={Boolean(editingId)}
           saving={saving}
+          availableTimeSlots={availableTimeSlots}
+          slotsLoading={slotsLoading}
+          slotsError={slotsError}
           onSelectClient={onSelectClient}
           onClearClient={onClearClient}
           setServiceId={setServiceId}
           setBarberId={setBarberId}
           setDate={setDate}
           setTime={setTime}
+          onRetrySlots={onRetrySlots}
           onCancel={() => setShowEditor(false)}
           onSave={saveAppointment}
         />

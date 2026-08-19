@@ -20,12 +20,16 @@ type AppointmentEditorProps = {
   time: string;
   editing: boolean;
   saving: boolean;
+  availableTimeSlots: string[];
+  slotsLoading: boolean;
+  slotsError: string;
   onSelectClient: (client: Client) => void;
   onClearClient: () => void;
   setServiceId: (id: string) => void;
   setBarberId: (id: string) => void;
   setDate: (value: string) => void;
   setTime: (value: string) => void;
+  onRetrySlots?: () => void;
   onCancel: () => void;
   onSave: () => void;
 };
@@ -42,15 +46,21 @@ export function AppointmentEditor({
   time,
   editing,
   saving,
+  availableTimeSlots,
+  slotsLoading,
+  slotsError,
   onSelectClient,
   onClearClient,
   setServiceId,
   setBarberId,
   setDate,
   setTime,
+  onRetrySlots,
   onCancel,
   onSave,
 }: AppointmentEditorProps) {
+  const hasRequiredSelection = Boolean(serviceId && barberId && date);
+
   return (
     <View style={styles.editor}>
       <View style={styles.editorHead}>
@@ -78,7 +88,17 @@ export function AppointmentEditor({
       <Text style={styles.inputLabel}>PROFISSIONAL</Text>
       <OptionChips options={barbers} selected={barberId} onSelect={setBarberId} />
 
-      <DateTimePickerSelectors date={date} time={time} onSelectDate={setDate} onSelectTime={setTime} />
+      <DateTimePickerSelectors
+        date={date}
+        time={time}
+        onSelectDate={setDate}
+        onSelectTime={setTime}
+        availableTimeSlots={availableTimeSlots}
+        slotsLoading={slotsLoading}
+        slotsError={slotsError}
+        hasRequiredSelection={hasRequiredSelection}
+        onRetrySlots={onRetrySlots}
+      />
 
       <Pressable disabled={saving} onPress={onSave} style={styles.editorSave}>
         <Text style={styles.editorSaveText}>

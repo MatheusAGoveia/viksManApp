@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -69,7 +69,26 @@ export default function AdminScreen() {
   const [serviceId, setServiceId] = useState(localServices[0].id);
   const [barberId, setBarberId] = useState('victor');
   const [date, setDate] = useState(todayIso());
-  const [time, setTime] = useState('09:00');
+  const [time, setTime] = useState('');
+  const [availableTimeSlots, setAvailableTimeSlots] = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState('');
+  const activeKeyRef = useRef('');
+
+  const handleSetServiceId = useCallback((id: string) => {
+    setServiceId(id);
+    setTime('');
+  }, []);
+
+  const handleSetBarberId = useCallback((id: string) => {
+    setBarberId(id);
+    setTime('');
+  }, []);
+
+  const handleSetDate = useCallback((val: string) => {
+    setDate(val);
+    setTime('');
+  }, []);
   const [blockReason, setBlockReason] = useState('Intervalo');
   const [blockStart, setBlockStart] = useState('12:00');
   const [blockEnd, setBlockEnd] = useState('13:00');
@@ -263,12 +282,97 @@ export default function AdminScreen() {
     setAnchorDate(addIsoDays(anchorDate, direction * (mode === 'week' ? 7 : 1)));
   }
 
+  const fetchAvailableSlots = useCallback(async () => {
+    const service = serviceOptions.find((item) => item.id === serviceId);
+    const barber = barberOptions.find((item) => item.id === barberId);
+
+    if (!serviceId || !barberId || !date || !service || !barber) {
+      setAvailableTimeSlots([]);
+      setSlotsLoading(false);
+      setSlotsError('');
+      return;
+    }
+
+    const requestKey = `${serviceId}:${barberId}:${date}:${editingId ?? ''}`;
+    activeKeyRef.current = requestKey;
+
+    setSlotsLoading(true);
+    setSlotsError('');
+
+    if (supabase) {
+      const availability = await supabase.rpc('get_available_slots', {
+        p_unit_slug: 'betim',
+        p_service_slug: service.slug,
+        p_day: date,
+        p_barber_slug: barber.slug,
+        p_party_size: 1,
+      });
+
+      if (activeKeyRef.current !== requestKey) return;
+
+      if (availability.error) {
+        setSlotsLoading(false);
+        setSlotsError('Não foi possível consultar os horários disponíveis.');
+        setAvailableTimeSlots([]);
+        return;
+      }
+
+      const rawSlots = availability.data ?? [];
+      const formatted: string[] = rawSlots.map((slot: Record<string, unknown>) => {
+        const d = new Date(String(slot.starts_at));
+        return new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).format(d);
+      });
+
+      if (editingId) {
+        const originalApp = appointments.find((item) => item.id === editingId);
+        if (originalApp) {
+          const originalTime = new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+          }).format(new Date(originalApp.startsAt));
+
+          const originalDate = brasiliaDateIso(originalApp.startsAt);
+
+          if (originalDate === date && originalApp.barberId === barberId && !formatted.includes(originalTime)) {
+            formatted.push(originalTime);
+            formatted.sort();
+          }
+        }
+      }
+
+      setAvailableTimeSlots(formatted);
+      setSlotsLoading(false);
+    } else {
+      const demoSlots = [
+        '09:00', '09:45', '10:30', '11:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45', '17:30',
+      ];
+      setAvailableTimeSlots(demoSlots);
+      setSlotsLoading(false);
+    }
+  }, [serviceId, barberId, date, serviceOptions, barberOptions, editingId, appointments]);
+
+  useEffect(() => {
+    if (showEditor) {
+      const timer = setTimeout(() => {
+        fetchAvailableSlots();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [serviceId, barberId, date, showEditor, fetchAvailableSlots]);
+
   async function openCreate(selectedClientId?: string) {
     setEditingId(undefined);
     setServiceId(serviceOptions[0]?.id ?? '');
     setBarberId(barberOptions[0]?.id ?? '');
     setDate(anchorDate);
-    setTime('09:00');
+    setTime('');
     setShowEditor(true);
     setNotice('');
     if (selectedClientId) {
@@ -298,14 +402,13 @@ export default function AdminScreen() {
     setServiceId(item.serviceId);
     setBarberId(item.barberId);
     setDate(brasiliaDateIso(item.startsAt));
-    setTime(
-      new Intl.DateTimeFormat('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-      }).format(new Date(item.startsAt)),
-    );
+    const formattedTime = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date(item.startsAt));
+    setTime(formattedTime);
     setShowEditor(true);
     setNotice('');
   }
@@ -745,15 +848,19 @@ export default function AdminScreen() {
                 date={date}
                 time={time}
                 saving={saving}
+                availableTimeSlots={availableTimeSlots}
+                slotsLoading={slotsLoading}
+                slotsError={slotsError}
                 setMode={setMode}
                 moveDate={moveDate}
                 openCreate={openCreate}
                 onSelectClient={handleSelectClient}
                 onClearClient={handleClearClient}
-                setServiceId={setServiceId}
-                setBarberId={setBarberId}
-                setDate={setDate}
+                setServiceId={handleSetServiceId}
+                setBarberId={handleSetBarberId}
+                setDate={handleSetDate}
                 setTime={setTime}
+                onRetrySlots={fetchAvailableSlots}
                 setShowEditor={setShowEditor}
                 saveAppointment={saveAppointment}
                 markPaid={markPaid}
