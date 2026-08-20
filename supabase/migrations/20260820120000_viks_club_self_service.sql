@@ -242,6 +242,10 @@ begin
 end;
 $$;
 
+drop function if exists public.renew_viks_club_subscription(uuid, integer, uuid);
+drop function if exists public.renew_viks_club_subscription(uuid, integer);
+drop function if exists public.renew_viks_club_subscription;
+
 create or replace function public.renew_viks_club_subscription(
   p_subscription_id uuid,
   p_cycles integer default 1
@@ -300,6 +304,10 @@ begin
   return jsonb_build_object('success', true, 'status', 'active');
 end;
 $$;
+
+drop function if exists public.update_viks_club_subscription_status(uuid, text, uuid);
+drop function if exists public.update_viks_club_subscription_status(uuid, text);
+drop function if exists public.update_viks_club_subscription_status;
 
 create or replace function public.update_viks_club_subscription_status(
   p_subscription_id uuid,
