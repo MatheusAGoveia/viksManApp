@@ -378,12 +378,25 @@ export async function activateSubscription(
   }
 
   try {
-    const { data, error } = await supabase.rpc('activate_viks_club_subscription', {
+    let { data, error } = await supabase.rpc('activate_viks_club_subscription', {
       p_client_id: clientId,
       p_plan_id: planId,
       p_cycles: cycles,
       p_barber_id: barberId || null,
     });
+
+    if (error && (error.message.includes('schema cache') || error.message.includes('Could not find'))) {
+      const legacyRes = await supabase.rpc('activate_viks_club_subscription', {
+        p_client_id: clientId,
+        p_plan_id: planId,
+        p_months: cycles,
+      } as any);
+
+      if (!legacyRes.error) {
+        data = legacyRes.data;
+        error = null;
+      }
+    }
 
     if (error) {
       return { success: false, error: error.message };

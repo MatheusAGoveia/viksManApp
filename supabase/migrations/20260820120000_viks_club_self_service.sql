@@ -97,7 +97,9 @@ begin
     end loop;
   end loop;
 end;
-$$;
+drop function if exists public.activate_viks_club_subscription(uuid, uuid, integer, text);
+drop function if exists public.activate_viks_club_subscription(uuid, uuid, integer, uuid);
+drop function if exists public.activate_viks_club_subscription;
 
 create or replace function public.activate_viks_club_subscription(
   p_client_id uuid,
@@ -668,3 +670,6 @@ grant execute on function public.renew_viks_club_subscription(uuid, integer) to 
 grant execute on function public.update_viks_club_subscription_status(uuid, text) to authenticated;
 grant execute on function public.consume_viks_club_benefit(uuid, uuid, integer, text) to authenticated;
 grant execute on function public.void_viks_club_benefit_usage(uuid, text) to authenticated;
+
+notify pgrst, 'reload schema';
+
