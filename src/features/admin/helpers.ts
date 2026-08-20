@@ -11,9 +11,9 @@ export const demoClients: Client[] = [
 
 export function demoAppointments(): AdminAppointment[] {
   return [
-    { id: 'apt-1', startsAt: `${todayIso()}T09:00:00-03:00`, status: 'confirmed', clientId: 'demo-2', clientName: 'Rafael Martins', serviceId: 'cut', serviceName: 'Corte', barberId: 'victor', barberName: 'Victor', duration: 45, partySize: 1, totalCents: 4000, paymentStatus: 'pending', prefersSilentService: false },
-    { id: 'apt-2', startsAt: `${todayIso()}T10:00:00-03:00`, status: 'checked_in', clientId: 'demo-3', clientName: 'Caio Andrade', serviceId: 'combo', serviceName: 'Corte + barba', barberId: 'bruno', barberName: 'Bruno', duration: 75, partySize: 2, totalCents: 15000, paymentStatus: 'partial', prefersSilentService: true },
-    { id: 'apt-3', startsAt: `${todayIso()}T14:30:00-03:00`, status: 'confirmed', clientId: 'demo-1', clientName: 'Matheus Damião', serviceId: 'beard', serviceName: 'Barba', barberId: 'victor', barberName: 'Victor', duration: 35, partySize: 1, totalCents: 3500, paymentStatus: 'paid', prefersSilentService: false },
+    { id: 'apt-1', startsAt: `${todayIso()}T09:00:00-03:00`, status: 'confirmed', clientId: 'demo-2', clientName: 'Rafael Martins', serviceId: 'cut', serviceSlug: 'cut', serviceName: 'Corte', barberId: 'victor', barberName: 'Victor', duration: 45, partySize: 1, totalCents: 4000, paymentStatus: 'pending', prefersSilentService: false },
+    { id: 'apt-2', startsAt: `${todayIso()}T10:00:00-03:00`, status: 'checked_in', clientId: 'demo-3', clientName: 'Caio Andrade', serviceId: 'combo', serviceSlug: 'combo', serviceName: 'Corte + barba', barberId: 'bruno', barberName: 'Bruno', duration: 75, partySize: 2, totalCents: 15000, paymentStatus: 'partial', prefersSilentService: true },
+    { id: 'apt-3', startsAt: `${todayIso()}T14:30:00-03:00`, status: 'confirmed', clientId: 'demo-1', clientName: 'Matheus Damião', serviceId: 'beard', serviceSlug: 'beard', serviceName: 'Barba', barberId: 'victor', barberName: 'Victor', duration: 35, partySize: 1, totalCents: 3500, paymentStatus: 'paid', prefersSilentService: false },
   ];
 }
 

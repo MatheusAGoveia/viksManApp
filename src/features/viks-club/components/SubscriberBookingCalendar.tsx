@@ -52,14 +52,29 @@ export function SubscriberBookingCalendar({
   const [slotsError, setSlotsError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null);
 
-  // Services included in active subscription service_credits
+  // Services with an available credit or discount in the current cycle.
   const planServices = useMemo(() => {
     const creditServiceIds = (subscription.benefits || [])
-      .filter((b) => b.benefitType === 'service_credit' && b.serviceId && b.quantityGranted > b.quantityUsed)
+      .filter((b) => ['service_credit', 'service_discount'].includes(b.benefitType) && b.serviceId && b.quantityGranted > b.quantityUsed)
       .map((b) => b.serviceId);
     if (creditServiceIds.length === 0) return [];
     return catalogServices.filter((srv) => creditServiceIds.includes(srv.id));
   }, [subscription.benefits]);
+
+  const selectedBenefit = useMemo(
+    () => (subscription.benefits || []).find(
+      (benefit) => benefit.serviceId === selectedServiceId
+        && ['service_credit', 'service_discount'].includes(benefit.benefitType)
+        && benefit.quantityUsed < benefit.quantityGranted,
+    ),
+    [selectedServiceId, subscription.benefits],
+  );
+
+  useEffect(() => {
+    if (planServices.length > 0 && !planServices.some((service) => service.id === selectedServiceId)) {
+      queueMicrotask(() => setSelectedServiceId(planServices[0].id));
+    }
+  }, [planServices, selectedServiceId]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -189,6 +204,10 @@ export function SubscriberBookingCalendar({
   // Confirm new advance booking (or rescheduling)
   async function handleConfirmBooking() {
     if (!selectedDateIso) return;
+    if (!reschedulingBookingId && !selectedBenefit) {
+      setFeedback({ kind: 'error', msg: 'Você não possui saldo para este serviço no ciclo atual.' });
+      return;
+    }
     setBusy(true);
     setFeedback(null);
     try {
@@ -200,6 +219,9 @@ export function SubscriberBookingCalendar({
       let totalAttempts = 1;
       let successCount = 0;
       let failedCount = 0;
+      const availableCredits = selectedBenefit
+        ? selectedBenefit.quantityGranted - selectedBenefit.quantityUsed
+        : 1;
 
       // 1. If rescheduling existing booking, use atomic reschedule RPC
       if (reschedulingBookingId) {
@@ -221,6 +243,7 @@ export function SubscriberBookingCalendar({
             barberId: targetBarber,
             date: selectedDateIso,
             time: selectedTime,
+            clubBenefitId: selectedBenefit?.id,
           });
           successCount++;
         } catch {
@@ -239,7 +262,7 @@ export function SubscriberBookingCalendar({
 
         const endDate = new Date(subEndIso + 'T23:59:59');
 
-        while (curr <= endDate) {
+        while (curr <= endDate && successCount < availableCredits) {
           const iso = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}-${String(curr.getDate()).padStart(2, '0')}`;
           if (iso >= todayIso && iso <= subEndIso && allowedDays.includes(targetDayOfWeek)) {
             totalAttempts++;
@@ -249,6 +272,7 @@ export function SubscriberBookingCalendar({
                 barberId: targetBarber,
                 date: iso,
                 time: selectedTime,
+                clubBenefitId: selectedBenefit?.id,
               });
               successCount++;
             } catch {

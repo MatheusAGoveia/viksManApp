@@ -18,6 +18,7 @@ export type Booking = {
   gratuityCents?: number;
   paymentStatus?: 'pending' | 'partial' | 'paid' | 'refunded';
   pixKey?: string | null;
+  clubBenefitId?: string;
 };
 
 type BookingContextValue = {
@@ -147,6 +148,24 @@ export function BookingProvider({ children }: PropsWithChildren) {
     if (supabase) {
       if (!user) throw new Error('AUTH_REQUIRED');
       const startsAt = brasiliaDateTimeToIso(input.date, input.time);
+      if (input.clubBenefitId) {
+        const { data, error } = await supabase.rpc('create_viks_club_appointment', {
+          p_subscription_benefit_id: input.clubBenefitId,
+          p_unit_slug: 'betim',
+          p_service_slug: input.serviceId,
+          p_barber_slug: input.barberId,
+          p_starts_at: startsAt,
+          p_notes: null,
+        });
+        if (error) throw new Error(error.message);
+        const result = data as Record<string, unknown> | null;
+        await refreshBookings();
+        return {
+          ...input,
+          id: result?.appointment_id ? String(result.appointment_id) : `remote-${Date.now()}`,
+          status: 'confirmed' as const,
+        };
+      }
       const { data, error } = await supabase.rpc('create_appointment', {
         p_unit_slug: 'betim',
         p_service_slug: input.serviceId,

@@ -823,41 +823,56 @@ export type Database = {
       viks_club_plans: {
         Row: {
           active: boolean
+          allow_self_cancel: boolean
+          allow_self_pause: boolean
           allowed_days: string[]
           barber_id: string | null
           billing_period: string
           created_at: string
           description: string | null
+          featured: boolean
           id: string
           name: string
           price: number
           price_cents: number
+          refund_on_cancel: boolean
+          self_service_enabled: boolean
           updated_at: string
         }
         Insert: {
           active?: boolean
+          allow_self_cancel?: boolean
+          allow_self_pause?: boolean
           allowed_days?: string[]
           barber_id?: string | null
           billing_period?: string
           created_at?: string
           description?: string | null
+          featured?: boolean
           id?: string
           name: string
           price?: number
           price_cents?: number
+          refund_on_cancel?: boolean
+          self_service_enabled?: boolean
           updated_at?: string
         }
         Update: {
           active?: boolean
+          allow_self_cancel?: boolean
+          allow_self_pause?: boolean
           allowed_days?: string[]
           barber_id?: string | null
           billing_period?: string
           created_at?: string
           description?: string | null
+          featured?: boolean
           id?: string
           name?: string
           price?: number
           price_cents?: number
+          refund_on_cancel?: boolean
+          self_service_enabled?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -1000,6 +1015,7 @@ export type Database = {
           client_id: string
           created_at: string
           created_by: string | null
+          discount_cents_applied: number
           id: string
           notes: string | null
           quantity: number
@@ -1014,6 +1030,7 @@ export type Database = {
           client_id: string
           created_at?: string
           created_by?: string | null
+          discount_cents_applied?: number
           id?: string
           notes?: string | null
           quantity?: number
@@ -1028,6 +1045,7 @@ export type Database = {
           client_id?: string
           created_at?: string
           created_by?: string | null
+          discount_cents_applied?: number
           id?: string
           notes?: string | null
           quantity?: number
@@ -1077,6 +1095,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      self_subscribe_viks_club: {
+        Args: { p_plan_id: string; p_barber_id?: string | null }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
+      create_viks_club_appointment: {
+        Args: {
+          p_subscription_benefit_id: string
+          p_unit_slug: string
+          p_service_slug: string
+          p_barber_slug: string
+          p_starts_at: string
+          p_notes?: string | null
+        }
+        Returns: Json
+        SetofOptions: { from: "*"; to: "*"; isOneToOne: false; isSetofReturn: false }
+      }
       activate_viks_club_subscription: {
         Args: { p_client_id: string; p_plan_id: string; p_cycles?: number; p_barber_id?: string | null }
         Returns: Json

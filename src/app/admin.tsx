@@ -38,24 +38,6 @@ import { supabase } from '@/lib/supabase';
 
 const todayIso = brasiliaTodayIso;
 
-function getWeekRangeIso(dateIso: string) {
-  const [y, m, d] = dateIso.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  const dayOfWeek = dt.getDay(); // 0 = Sunday
-  const startOfWeek = new Date(dt);
-  startOfWeek.setDate(dt.getDate() - dayOfWeek);
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 7);
-
-  const formatIso = (date: Date) =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-
-  return {
-    startIso: formatIso(startOfWeek),
-    endIso: formatIso(endOfWeek),
-  };
-}
-
 export default function AdminScreen() {
   const { width } = useResponsiveLayout();
   const auth = useAuth();
@@ -152,10 +134,6 @@ export default function AdminScreen() {
       return;
     }
     setLoading(true);
-    const range = mode === 'week' ? getWeekRangeIso(anchorDate) : { startIso: anchorDate, endIso: addIsoDays(anchorDate, 1) };
-    const queryStartIso = brasiliaDateTimeToIso(range.startIso, '00:00');
-    const queryEndIso = brasiliaDateTimeToIso(addIsoDays(range.startIso, 60), '00:00');
-
     const [
       rawAppointmentResult,
       serviceResult,
@@ -167,10 +145,10 @@ export default function AdminScreen() {
       supabase
         .from('appointments')
         .select(
-          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, club_discount_cents, gratuity_cents, payment_status, client:profiles(full_name, prefers_silent_service), service:services(name,duration_minutes), barber:barbers(name)',
+          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, club_discount_cents, gratuity_cents, payment_status, client:profiles(full_name, prefers_silent_service), service:services(name,slug,duration_minutes), barber:barbers(name)',
         )
-        .gte('starts_at', queryStartIso)
-        .lt('starts_at', queryEndIso)
+        .gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00'))
+        .lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00'))
         .order('starts_at'),
       supabase.from('services').select('id, slug, name, duration_minutes, price_cents, active').order('sort_order'),
       supabase.from('barbers').select('id, slug, name, active').order('sort_order'),
@@ -197,10 +175,10 @@ export default function AdminScreen() {
       appointmentResult = await supabase
         .from('appointments')
         .select(
-          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, club_discount_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,duration_minutes), barber:barbers(name)',
+          'id, starts_at, status, client_id, service_id, barber_id, party_size, unit_price_cents, club_discount_cents, gratuity_cents, payment_status, client:profiles(full_name), service:services(name,slug,duration_minutes), barber:barbers(name)',
         )
-        .gte('starts_at', queryStartIso)
-        .lt('starts_at', queryEndIso)
+        .gte('starts_at', brasiliaDateTimeToIso(anchorDate, '00:00'))
+        .lt('starts_at', brasiliaDateTimeToIso(addIsoDays(anchorDate, 8), '00:00'))
         .order('starts_at');
     }
 
@@ -224,6 +202,7 @@ export default function AdminScreen() {
             clientId: String(row.client_id),
             clientName: String(client?.full_name ?? 'Cliente'),
             serviceId: String(row.service_id),
+            serviceSlug: String(service?.slug ?? ''),
             serviceName: String(service?.name ?? 'Serviço'),
             barberId: String(row.barber_id),
             barberName: String(barber?.name ?? 'Profissional'),
@@ -294,25 +273,19 @@ export default function AdminScreen() {
       setPixKey(unitResult.data.pix_key ?? '');
     }
     setLoading(false);
-  }, [anchorDate, auth.isStaff, mode]);
+  }, [anchorDate, auth.isStaff]);
 
   useEffect(() => {
     queueMicrotask(loadRemote);
   }, [loadRemote]);
 
-  const visibleAppointments = useMemo(() => {
-    if (selectedClient) {
-      return appointments.filter((item) => item.clientId === selectedClient.id);
-    }
-    if (mode === 'day') {
-      return appointments.filter((item) => brasiliaDateIso(item.startsAt) === anchorDate);
-    }
-    const range = getWeekRangeIso(anchorDate);
-    return appointments.filter((item) => {
-      const dIso = brasiliaDateIso(item.startsAt);
-      return dIso >= range.startIso && dIso < range.endIso;
-    });
-  }, [anchorDate, appointments, mode, selectedClient]);
+  const visibleAppointments = useMemo(
+    () =>
+      appointments.filter(
+        (item) => mode === 'week' || brasiliaDateIso(item.startsAt) === anchorDate,
+      ),
+    [anchorDate, appointments, mode],
+  );
 
   const occupancy = Math.min(
     100,
@@ -564,6 +537,7 @@ export default function AdminScreen() {
         clientId,
         clientName: client?.name ?? 'Cliente',
         serviceId,
+        serviceSlug: service.slug,
         serviceName: service.name,
         barberId,
         barberName: barberOpt?.name ?? 'Profissional',
@@ -840,7 +814,7 @@ export default function AdminScreen() {
         return;
       }
       const matchingBenefit = sub.benefits.find(
-        (b) => b.benefitType === 'service_credit' && b.serviceId === item.serviceId && b.quantityUsed < b.quantityGranted
+        (b) => ['service_credit', 'service_discount'].includes(b.benefitType) && b.serviceId === item.serviceSlug && b.quantityUsed < b.quantityGranted
       );
       if (!matchingBenefit) {
         setNotice('Nenhum crédito de benefício disponível para este serviço nesta assinatura.');

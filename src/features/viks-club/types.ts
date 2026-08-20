@@ -27,6 +27,11 @@ export interface ViksClubPlan {
   allowedDays?: DayOfWeek[];
   barberId?: string | null;
   active: boolean;
+  selfServiceEnabled: boolean;
+  allowSelfPause: boolean;
+  allowSelfCancel: boolean;
+  refundOnCancel: boolean;
+  featured: boolean;
   benefits?: ViksClubPlanBenefit[];
   createdAt?: string;
   updatedAt?: string;

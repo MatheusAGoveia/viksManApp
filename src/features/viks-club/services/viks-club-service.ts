@@ -25,7 +25,13 @@ let demoPlans: ViksClubPlan[] = [
     price: 89.9,
     priceCents: 8990,
     billingPeriod: 'monthly',
+    allowedDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
     active: true,
+    selfServiceEnabled: true,
+    allowSelfPause: true,
+    allowSelfCancel: true,
+    refundOnCancel: true,
+    featured: false,
     benefits: [
       {
         id: 'b-ess-1',
@@ -48,6 +54,11 @@ let demoPlans: ViksClubPlan[] = [
     billingPeriod: 'monthly',
     allowedDays: ['monday', 'tuesday', 'wednesday', 'thursday'],
     active: true,
+    selfServiceEnabled: true,
+    allowSelfPause: true,
+    allowSelfCancel: true,
+    refundOnCancel: true,
+    featured: true,
     benefits: [
       {
         id: 'b-prem-1',
@@ -76,8 +87,8 @@ let demoPlans: ViksClubPlan[] = [
 let demoSubscriptions: Record<string, ViksClubSubscription> = {};
 let demoTransactions: Record<string, LoyaltyTransaction[]> = {};
 
-export async function fetchViksClubPlans(): Promise<ViksClubPlan[]> {
-  if (!isSupabaseActive() || !supabase) {
+export async function fetchViksClubPlans(forceDemo = false): Promise<ViksClubPlan[]> {
+  if (forceDemo || !isSupabaseActive() || !supabase) {
     return demoPlans;
   }
 
@@ -107,6 +118,11 @@ export async function fetchViksClubPlans(): Promise<ViksClubPlan[]> {
       billingPeriod: (p.billing_period as BillingPeriod) ?? 'monthly',
       allowedDays: (p.allowed_days as DayOfWeek[]) ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
       active: Boolean(p.active),
+      selfServiceEnabled: Boolean(p.self_service_enabled ?? false),
+      allowSelfPause: Boolean(p.allow_self_pause ?? true),
+      allowSelfCancel: Boolean(p.allow_self_cancel ?? true),
+      refundOnCancel: Boolean(p.refund_on_cancel ?? true),
+      featured: Boolean(p.featured),
       benefits: rawBenefits.map((b) => ({
         id: String(b.id),
         planId: String(b.plan_id),
@@ -139,6 +155,11 @@ export async function saveViksClubPlan(input: {
   billingPeriod: BillingPeriod;
   allowedDays?: DayOfWeek[];
   active?: boolean;
+  selfServiceEnabled?: boolean;
+  allowSelfPause?: boolean;
+  allowSelfCancel?: boolean;
+  refundOnCancel?: boolean;
+  featured?: boolean;
   benefits: {
     id?: string;
     benefitType: BenefitType;
@@ -167,6 +188,11 @@ export async function saveViksClubPlan(input: {
           billing_period: input.billingPeriod,
           allowed_days: input.allowedDays ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
           active: input.active !== undefined ? input.active : true,
+          self_service_enabled: input.selfServiceEnabled ?? true,
+          allow_self_pause: input.allowSelfPause ?? true,
+          allow_self_cancel: input.allowSelfCancel ?? true,
+          refund_on_cancel: input.refundOnCancel ?? true,
+          featured: input.featured ?? false,
           updated_at: new Date().toISOString(),
         })
         .eq('id', planId);
@@ -183,6 +209,11 @@ export async function saveViksClubPlan(input: {
           billing_period: input.billingPeriod,
           allowed_days: input.allowedDays ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
           active: input.active !== undefined ? input.active : true,
+          self_service_enabled: input.selfServiceEnabled ?? true,
+          allow_self_pause: input.allowSelfPause ?? true,
+          allow_self_cancel: input.allowSelfCancel ?? true,
+          refund_on_cancel: input.refundOnCancel ?? true,
+          featured: input.featured ?? false,
         })
         .select()
         .single();
@@ -220,6 +251,11 @@ function saveDemoPlan(input: {
   billingPeriod: BillingPeriod;
   allowedDays?: DayOfWeek[];
   active?: boolean;
+  selfServiceEnabled?: boolean;
+  allowSelfPause?: boolean;
+  allowSelfCancel?: boolean;
+  refundOnCancel?: boolean;
+  featured?: boolean;
   benefits: {
     id?: string;
     benefitType: BenefitType;
@@ -240,6 +276,11 @@ function saveDemoPlan(input: {
     billingPeriod: input.billingPeriod,
     allowedDays: input.allowedDays ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
     active: input.active !== undefined ? input.active : true,
+    selfServiceEnabled: input.selfServiceEnabled ?? true,
+    allowSelfPause: input.allowSelfPause ?? true,
+    allowSelfCancel: input.allowSelfCancel ?? true,
+    refundOnCancel: input.refundOnCancel ?? true,
+    featured: input.featured ?? false,
     benefits: input.benefits.map((b, idx) => ({
       id: b.id || `b-${planId}-${idx}`,
       planId,
@@ -332,7 +373,7 @@ export async function activateSubscription(
   cycles = 1,
   barberId?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase || !isUuid(clientId) || !isUuid(planId)) {
+  if (!isSupabaseActive() || !supabase) {
     return fallbackDemoActivate(clientId, planId, cycles, barberId);
   }
 
@@ -351,6 +392,33 @@ export async function activateSubscription(
     return { success: Boolean((data as Record<string, unknown> | null)?.success) };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Erro ao ativar assinatura.' };
+  }
+}
+
+export async function selfSubscribe(
+  clientId: string,
+  planId: string,
+  barberId?: string,
+): Promise<{ success: boolean; subscriptionId?: string; error?: string }> {
+  if (!isSupabaseActive() || !supabase || !isUuid(clientId) || !isUuid(planId)) {
+    const result = fallbackDemoActivate(clientId, planId, 1, barberId);
+    const sub = demoSubscriptions[clientId];
+    return { ...result, subscriptionId: sub?.id };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('self_subscribe_viks_club', {
+      p_plan_id: planId,
+      p_barber_id: barberId || null,
+    });
+    if (error) return { success: false, error: error.message };
+    const result = data as Record<string, unknown> | null;
+    return {
+      success: Boolean(result?.success),
+      subscriptionId: result?.subscription_id ? String(result.subscription_id) : undefined,
+    };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Erro ao ativar assinatura.' };
   }
 }
 
@@ -394,7 +462,7 @@ export async function renewSubscription(
   clientId: string,
   cycles = 1,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase || !isUuid(subscriptionId)) {
+  if (!isSupabaseActive() || !supabase) {
     return fallbackDemoRenew(subscriptionId, clientId, cycles);
   }
 
@@ -437,7 +505,7 @@ export async function updateSubscriptionStatus(
   clientId: string,
   newStatus: SubscriptionStatus,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase || !isUuid(subscriptionId)) {
+  if (!isSupabaseActive() || !supabase || !isUuid(clientId) || !isUuid(subscriptionId)) {
     return fallbackDemoStatus(subscriptionId, clientId, newStatus);
   }
 
@@ -472,9 +540,9 @@ export async function consumeBenefit(
   appointmentId?: string,
   quantity = 1,
   notes?: string,
-): Promise<{ success: boolean; error?: string; remaining?: number; discountCentsApplied?: number }> {
-  if (!isSupabaseActive() || !supabase || !isUuid(subscriptionBenefitId) || (appointmentId && !isUuid(appointmentId))) {
-    return fallbackDemoConsumeBenefit(subscriptionBenefitId, clientId, appointmentId, quantity, notes);
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseActive() || !supabase) {
+    return fallbackDemoConsume(subscriptionBenefitId, clientId, quantity);
   }
 
   try {
@@ -488,18 +556,13 @@ export async function consumeBenefit(
     if (error) {
       return { success: false, error: error.message };
     }
-    const res = data as any;
-    return {
-      success: Boolean(res?.success),
-      remaining: Number(res?.remaining ?? 0),
-      discountCentsApplied: Number(res?.discount_cents_applied ?? 0)
-    };
+    return { success: Boolean((data as Record<string, unknown> | null)?.success) };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Erro ao registrar consumo de benefício.' };
   }
 }
 
-function fallbackDemoConsumeBenefit(subscriptionBenefitId: string, clientId: string, appointmentId?: string, quantity = 1, notes?: string) {
+function fallbackDemoConsume(subscriptionBenefitId: string, clientId: string, quantity: number) {
   const sub = demoSubscriptions[clientId];
   if (!sub || sub.status !== 'active' || !sub.benefits) {
     return { success: false, error: 'Assinatura inativa ou sem benefícios.' };
@@ -510,21 +573,21 @@ function fallbackDemoConsumeBenefit(subscriptionBenefitId: string, clientId: str
     return { success: false, error: `Saldo insuficiente (Disponível: ${b.quantityGranted - b.quantityUsed}).` };
   }
   b.quantityUsed += quantity;
-  return { success: true, remaining: b.quantityGranted - b.quantityUsed };
+  return { success: true };
 }
 
 export async function voidBenefitUsage(
   usageId: string,
-  reason?: string,
+  reason = 'Estorno de atendimento',
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase || !isUuid(usageId)) {
+  if (!isSupabaseActive() || !supabase) {
     return { success: true };
   }
 
   try {
     const { data, error } = await supabase.rpc('void_viks_club_benefit_usage', {
       p_usage_id: usageId,
-      p_reason: reason || null,
+      p_reason: reason,
     });
 
     if (error) {
@@ -538,7 +601,24 @@ export async function voidBenefitUsage(
 
 export async function fetchLoyaltyTransactions(clientId: string): Promise<LoyaltyTransaction[]> {
   if (!isSupabaseActive() || !supabase || !clientId || !isUuid(clientId)) {
-    return demoTransactions[clientId] || [];
+    return demoTransactions[clientId] || [
+      {
+        id: 'tx-1',
+        clientId,
+        type: 'earn',
+        points: 100,
+        reason: 'Atendimento presencial',
+        createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+      },
+      {
+        id: 'tx-2',
+        clientId,
+        type: 'adjustment_credit',
+        points: 50,
+        reason: 'Bônus de Boas-Vindas Viks',
+        createdAt: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ];
   }
 
   const { data, error } = await supabase
@@ -570,8 +650,8 @@ export async function manageLoyaltyPoints(
   points: number,
   reason: string,
   appointmentId?: string,
-): Promise<{ success: boolean; error?: string; newBalance?: number }> {
-  if (!isSupabaseActive() || !supabase || !isUuid(clientId) || (appointmentId && !isUuid(appointmentId))) {
+): Promise<{ success: boolean; newBalance?: number; error?: string }> {
+  if (!isSupabaseActive() || !supabase) {
     return fallbackDemoManageLoyalty(clientId, type, points, reason, appointmentId);
   }
 
@@ -622,7 +702,7 @@ export async function rescheduleAppointment(
   date: string,
   time: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseActive() || !supabase || !isUuid(appointmentId)) {
+  if (!isSupabaseActive() || !supabase) {
     return { success: true };
   }
   try {

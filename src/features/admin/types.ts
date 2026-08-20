@@ -24,6 +24,7 @@ export type AdminAppointment = {
   clientId: string;
   clientName: string;
   serviceId: string;
+  serviceSlug: string;
   serviceName: string;
   barberId: string;
   barberName: string;

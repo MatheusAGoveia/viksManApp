@@ -16,12 +16,12 @@ export function AnimatedSplashOverlay() {
         Animated.timing(opacity, {
           toValue: 0,
           duration: FADE_DURATION,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(scale, {
           toValue: 1.02,
           duration: FADE_DURATION,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
       ]).start(({ finished }) => {
         if (finished) setVisible(false);

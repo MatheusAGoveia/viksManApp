@@ -25,6 +25,11 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
   const [cutQty, setCutQty] = useState('2');
   const [beardQty, setBeardQty] = useState('1');
   const [productDiscount, setProductDiscount] = useState('10');
+  const [selfServiceEnabled, setSelfServiceEnabled] = useState(true);
+  const [allowSelfPause, setAllowSelfPause] = useState(true);
+  const [allowSelfCancel, setAllowSelfCancel] = useState(true);
+  const [refundOnCancel, setRefundOnCancel] = useState(true);
+  const [featured, setFeatured] = useState(false);
   const [allowedDays, setAllowedDays] = useState<('monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday')[]>([
     'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
   ]);
@@ -52,6 +57,11 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
       priceCents: 9900,
       billingPeriod: 'monthly',
       active: true,
+      selfServiceEnabled: true,
+      allowSelfPause: true,
+      allowSelfCancel: true,
+      refundOnCancel: true,
+      featured: false,
       benefits: [],
     });
     setName('');
@@ -61,6 +71,11 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
     setCutQty('2');
     setBeardQty('1');
     setProductDiscount('10');
+    setSelfServiceEnabled(true);
+    setAllowSelfPause(true);
+    setAllowSelfCancel(true);
+    setRefundOnCancel(true);
+    setFeatured(false);
     setAllowedDays(['monday', 'tuesday', 'wednesday', 'thursday']);
     setErrorMsg(null);
   }
@@ -79,6 +94,11 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
     setCutQty(cutB ? String(cutB.quantity) : '0');
     setBeardQty(beardB ? String(beardB.quantity) : '0');
     setProductDiscount(prodB ? String(prodB.discountPercent ?? 0) : '0');
+    setSelfServiceEnabled(plan.selfServiceEnabled);
+    setAllowSelfPause(plan.allowSelfPause);
+    setAllowSelfCancel(plan.allowSelfCancel);
+    setRefundOnCancel(plan.refundOnCancel);
+    setFeatured(plan.featured);
     setAllowedDays(plan.allowedDays as any ?? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']);
     setErrorMsg(null);
   }
@@ -144,6 +164,11 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
       billingPeriod,
       allowedDays: allowedDays as any,
       active: editingPlan?.active !== undefined ? editingPlan.active : true,
+      selfServiceEnabled,
+      allowSelfPause,
+      allowSelfCancel,
+      refundOnCancel,
+      featured,
       benefits: benefitsToSave,
     });
 
@@ -164,6 +189,11 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
       priceCents: plan.priceCents || Math.round(plan.price * 100),
       billingPeriod: plan.billingPeriod,
       active: !plan.active,
+      selfServiceEnabled: plan.selfServiceEnabled,
+      allowSelfPause: plan.allowSelfPause,
+      allowSelfCancel: plan.allowSelfCancel,
+      refundOnCancel: plan.refundOnCancel,
+      featured: plan.featured,
       benefits: (plan.benefits || []).map((b) => ({
         benefitType: b.benefitType,
         serviceId: b.serviceId || undefined,
@@ -272,6 +302,15 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
                 })}
               </View>
 
+              <Text style={styles.sectionHeader}>AUTONOMIA DO CLIENTE</Text>
+              <View style={styles.settingsBox}>
+                <SettingToggle label="Contratação pelo app" hint="O cliente ativa o plano sem depender da recepção." value={selfServiceEnabled} onPress={() => setSelfServiceEnabled((value) => !value)} />
+                <SettingToggle label="Pausa pelo app" hint="Permite pausar e reativar dentro do ciclo vigente." value={allowSelfPause} onPress={() => setAllowSelfPause((value) => !value)} />
+                <SettingToggle label="Cancelamento pelo app" hint="Permite encerrar a assinatura pelo painel do cliente." value={allowSelfCancel} onPress={() => setAllowSelfCancel((value) => !value)} />
+                <SettingToggle label="Estornar crédito ao cancelar" hint="Devolve automaticamente o benefício de um horário cancelado." value={refundOnCancel} onPress={() => setRefundOnCancel((value) => !value)} />
+                <SettingToggle label="Destacar plano" hint="Exibe o selo Mais escolhido na vitrine do Viks Club." value={featured} onPress={() => setFeatured((value) => !value)} />
+              </View>
+
               <View style={styles.formActions}>
                 <Pressable onPress={() => setEditingPlan(null)} style={styles.cancelBtn}>
                   <Text style={styles.cancelBtnText}>VOLTAR</Text>
@@ -328,6 +367,20 @@ export function ViksClubPlanModal({ visible, onClose }: Props) {
   );
 }
 
+function SettingToggle({ label, hint, value, onPress }: { label: string; hint: string; value: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.settingRow} accessibilityRole="switch" accessibilityState={{ checked: value }}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.settingLabel}>{label}</Text>
+        <Text style={styles.settingHint}>{hint}</Text>
+      </View>
+      <View style={[styles.switchTrack, value && styles.switchTrackActive]}>
+        <View style={[styles.switchKnob, value && styles.switchKnobActive]} />
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   modalCard: { width: '100%', maxWidth: 560, maxHeight: '90%', backgroundColor: colors.paper, borderRadius: 8, padding: 20 },
@@ -363,6 +416,14 @@ const styles = StyleSheet.create({
   periodChipText: { fontFamily: fonts.mono, fontSize: 9, fontWeight: '800', color: colors.ink },
   selectedText: { color: colors.white },
   sectionHeader: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', color: colors.blue, marginTop: 12, letterSpacing: 1 },
+  settingsBox: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  settingRow: { minHeight: 66, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  settingLabel: { fontFamily: fonts.sans, fontSize: 12, fontWeight: '800', color: colors.ink },
+  settingHint: { fontFamily: fonts.sans, fontSize: 10, lineHeight: 14, color: colors.muted, marginTop: 2 },
+  switchTrack: { width: 42, height: 24, borderRadius: 12, padding: 3, backgroundColor: colors.soft },
+  switchTrackActive: { backgroundColor: colors.blue },
+  switchKnob: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.white },
+  switchKnobActive: { alignSelf: 'flex-end' },
   formActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   cancelBtn: { flex: 1, padding: 12, borderWidth: 1, borderColor: colors.line, alignItems: 'center', borderRadius: 4 },
   cancelBtnText: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', color: colors.ink },
