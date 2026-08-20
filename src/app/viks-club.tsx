@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, fonts, layout } from '@/constants/theme';
@@ -139,7 +140,85 @@ function MemberExperience({ subscription, plan, transactions, points, wide, onSt
 
 function PlanCard({ plan, index, requiresLogin, onPress }: { plan: ViksClubPlan; index: number; requiresLogin: boolean; onPress: () => void }) {
   const availableDays = (plan.allowedDays ?? []).map((day) => DAY_LABELS[day]).filter(Boolean).join(' · ');
-  return <View style={[styles.planCard, plan.featured && styles.planCardFeatured]}><View style={styles.planCardTopline}><Text style={styles.planIndex}>0{index + 1}</Text>{plan.featured ? <View style={styles.featuredBadge}><Ionicons name="sparkles" size={12} color={colors.white} /><Text style={styles.featuredBadgeText}>MAIS ESCOLHIDO</Text></View> : null}</View><View><Text style={styles.planName}>{plan.name}</Text><Text style={styles.planDescription}>{plan.description ?? 'Um plano para manter seu estilo sempre em dia.'}</Text></View><View style={styles.priceRow}><Text style={styles.currency}>R$</Text><Text style={styles.price}>{Math.floor(plan.priceCents / 100)}</Text><View><Text style={styles.cents}>,{String(plan.priceCents % 100).padStart(2, '0')}</Text><Text style={styles.period}>/{plan.billingPeriod === 'yearly' ? 'ANO' : 'MÊS'}</Text></View></View><View style={styles.planBenefits}>{(plan.benefits ?? []).map((benefit) => <PlanBenefit key={benefit.id} benefit={benefit} />)}</View><View style={styles.planRules}><Ionicons name="calendar-outline" size={15} color={colors.muted} /><Text style={styles.planRulesText}>AGENDE: {availableDays || 'CONSULTE A UNIDADE'}</Text></View><Pressable onPress={onPress} style={[styles.planCta, plan.featured && styles.planCtaFeatured]}><Text style={styles.planCtaText}>{requiresLogin ? 'ENTRAR PARA ASSINAR' : plan.selfServiceEnabled ? 'ESCOLHER ESTE PLANO' : 'FALAR COM A LOJA'}</Text><Ionicons name="arrow-forward" size={18} color={colors.white} /></Pressable><Text style={styles.planFinePrint}>{plan.refundOnCancel ? 'Crédito devolvido em cancelamentos permitidos.' : 'Créditos usados não são devolvidos ao cancelar.'}</Text></View>;
+  const isHovered = useSharedValue(false);
+  const isPressed = useSharedValue(false);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const scale = isPressed.value ? 0.97 : isHovered.value ? 1.03 : 1;
+    const translateY = isHovered.value ? -6 : 0;
+    const borderColor = isHovered.value ? colors.blue : plan.featured ? colors.blue : '#D6D2C9';
+    return {
+      transform: [
+        { scale: withSpring(scale, { damping: 16, stiffness: 200 }) },
+        { translateY: withSpring(translateY, { damping: 16, stiffness: 200 }) },
+      ],
+      borderColor: withTiming(borderColor, { duration: 150 }),
+      borderWidth: isHovered.value || plan.featured ? 2 : 1,
+      shadowColor: '#0D59F2',
+      shadowOffset: { width: 0, height: isHovered.value ? 10 : 2 },
+      shadowOpacity: isHovered.value ? 0.2 : 0.04,
+      shadowRadius: isHovered.value ? 16 : 4,
+      elevation: isHovered.value ? 8 : 2,
+    };
+  });
+
+  const handleHoverIn = () => { isHovered.value = true; };
+  const handleHoverOut = () => { isHovered.value = false; };
+  const handlePressIn = () => { isPressed.value = true; };
+  const handlePressOut = () => { isPressed.value = false; };
+
+  return (
+    <Pressable
+      onHoverIn={handleHoverIn}
+      onHoverOut={handleHoverOut}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={onPress}
+      style={{ flex: 1, minWidth: 290 }}
+    >
+      <Animated.View style={[styles.planCard, plan.featured && styles.planCardFeatured, animatedStyle]}>
+        <View style={styles.planCardTopline}>
+          <Text style={styles.planIndex}>0{index + 1}</Text>
+          {plan.featured ? (
+            <View style={styles.featuredBadge}>
+              <Ionicons name="sparkles" size={12} color={colors.white} />
+              <Text style={styles.featuredBadgeText}>MAIS ESCOLHIDO</Text>
+            </View>
+          ) : null}
+        </View>
+        <View>
+          <Text style={styles.planName}>{plan.name}</Text>
+          <Text style={styles.planDescription}>{plan.description ?? 'Um plano para manter seu estilo sempre em dia.'}</Text>
+        </View>
+        <View style={styles.priceRow}>
+          <Text style={styles.currency}>R$</Text>
+          <Text style={styles.price}>{Math.floor(plan.priceCents / 100)}</Text>
+          <View>
+            <Text style={styles.cents}>,{String(plan.priceCents % 100).padStart(2, '0')}</Text>
+            <Text style={styles.period}>/{plan.billingPeriod === 'yearly' ? 'ANO' : 'MÊS'}</Text>
+          </View>
+        </View>
+        <View style={styles.planBenefits}>
+          {(plan.benefits ?? []).map((benefit) => (
+            <PlanBenefit key={benefit.id} benefit={benefit} />
+          ))}
+        </View>
+        <View style={styles.planRules}>
+          <Ionicons name="calendar-outline" size={15} color={colors.muted} />
+          <Text style={styles.planRulesText}>AGENDE: {availableDays || 'CONSULTE A UNIDADE'}</Text>
+        </View>
+        <View style={[styles.planCta, plan.featured && styles.planCtaFeatured]}>
+          <Text style={styles.planCtaText}>
+            {requiresLogin ? 'ENTRAR PARA ASSINAR' : plan.selfServiceEnabled ? 'ESCOLHER ESTE PLANO' : 'FALAR COM A LOJA'}
+          </Text>
+          <Ionicons name="arrow-forward" size={18} color={colors.white} />
+        </View>
+        <Text style={styles.planFinePrint}>
+          {plan.refundOnCancel ? 'Crédito devolvido em cancelamentos permitidos.' : 'Créditos usados não são devolvidos ao cancelar.'}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
 }
 
 function PlanBenefit({ benefit }: { benefit: ViksClubPlanBenefit }) { const label = benefit.description ?? benefitLabel(benefit.serviceId, benefit.quantity, benefit.discountPercent); return <View style={styles.planBenefitRow}><View style={styles.checkCircle}><Ionicons name="checkmark" size={12} color={colors.white} /></View><Text style={styles.planBenefitText}>{label}</Text></View>; }

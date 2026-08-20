@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandLockup, PrimaryButton, SectionHeading } from '@/components/brand-ui';
@@ -14,6 +15,70 @@ import { getNextAvailableSlot, type NextAvailableSlot } from '@/lib/availability
 import { supabase } from '@/lib/supabase';
 
 type LivePromotion = { id: string; title: string; message: string; discountLabel: string };
+
+function ServiceCardRow({
+  service,
+  index,
+  onPress,
+}: {
+  service: typeof services[number];
+  index: number;
+  onPress: () => void;
+}) {
+  const isHovered = useSharedValue(false);
+  const isPressed = useSharedValue(false);
+
+  const rowAnimStyle = useAnimatedStyle(() => {
+    const translateX = isPressed.value ? 2 : isHovered.value ? 8 : 0;
+    const bg = isHovered.value ? '#F4F2EB' : 'transparent';
+    return {
+      transform: [{ translateX: withSpring(translateX, { damping: 15, stiffness: 200 }) }],
+      backgroundColor: withTiming(bg, { duration: 150 }),
+      paddingHorizontal: isHovered.value ? 12 : 0,
+    };
+  });
+
+  const arrowAnimStyle = useAnimatedStyle(() => {
+    const arrowX = isHovered.value ? 5 : 0;
+    const bg = isHovered.value ? colors.blue : 'transparent';
+    const border = isHovered.value ? colors.blue : colors.line;
+    return {
+      transform: [{ translateX: withSpring(arrowX, { damping: 14, stiffness: 220 }) }],
+      backgroundColor: withTiming(bg, { duration: 150 }),
+      borderColor: withTiming(border, { duration: 150 }),
+    };
+  });
+
+  const handleHoverIn = () => { isHovered.value = true; };
+  const handleHoverOut = () => { isHovered.value = false; };
+  const handlePressIn = () => { isPressed.value = true; };
+  const handlePressOut = () => { isPressed.value = false; };
+
+  return (
+    <Pressable
+      onHoverIn={handleHoverIn}
+      onHoverOut={handleHoverOut}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={onPress}
+    >
+      <Animated.View style={[styles.serviceRow, rowAnimStyle]}>
+        <Text style={styles.serviceIndex}>{String(index + 1).padStart(2, '0')}</Text>
+        <View style={styles.serviceCopy}>
+          <Text style={styles.serviceName}>{service.name}</Text>
+          <Text style={styles.serviceDescription}>{service.description}</Text>
+        </View>
+        <View style={styles.serviceInfo}>
+          <Text style={styles.servicePrice}>{formatCurrency(service.price)}</Text>
+          <Text style={styles.serviceDuration}>{service.duration} MIN</Text>
+        </View>
+        <Animated.View style={[styles.serviceArrow, arrowAnimStyle]}>
+          <Ionicons name="arrow-forward" color={colors.ink} size={18} />
+        </Animated.View>
+      </Animated.View>
+    </Pressable>
+  );
+}
 
 export default function HomeScreen() {
   const { width } = useResponsiveLayout();
@@ -101,12 +166,14 @@ export default function HomeScreen() {
         <View style={styles.servicesSection}>
           <SectionHeading eyebrow="SERVIÇOS" title="Escolha o seu." aside={<Text style={styles.count}>04 OPÇÕES</Text>} />
           <View style={styles.serviceList}>
-            {services.map((service, index) => <Pressable key={service.id} onPress={() => openBooking(service.id)} style={({ pressed }) => [styles.serviceRow, pressed && styles.pressed]}>
-              <Text style={styles.serviceIndex}>{String(index + 1).padStart(2, '0')}</Text>
-              <View style={styles.serviceCopy}><Text style={styles.serviceName}>{service.name}</Text><Text style={styles.serviceDescription}>{service.description}</Text></View>
-              <View style={styles.serviceInfo}><Text style={styles.servicePrice}>{formatCurrency(service.price)}</Text><Text style={styles.serviceDuration}>{service.duration} MIN</Text></View>
-              <View style={styles.serviceArrow}><Ionicons name="arrow-forward" color={colors.ink} size={18} /></View>
-            </Pressable>)}
+            {services.map((service, index) => (
+              <ServiceCardRow
+                key={service.id}
+                service={service}
+                index={index}
+                onPress={() => openBooking(service.id)}
+              />
+            ))}
           </View>
         </View>
 

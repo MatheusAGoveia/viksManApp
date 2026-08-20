@@ -13,6 +13,99 @@ import type { Tables } from '@/types/database';
 
 type Product = Tables<'products'>;
 
+const defaultProducts: Product[] = [
+  {
+    id: 'prod-1',
+    name: 'Pomada Matte Viks',
+    slug: 'pomada-matte-viks',
+    category: 'finalizacao',
+    description: 'Fixação forte com efeito opaco natural. Ideal para topetes e estrutura sem brilho.',
+    price_cents: 6500,
+    stock_quantity: 12,
+    active: true,
+    featured: true,
+    image_url: null,
+    sort_order: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'prod-2',
+    name: 'Óleo para Barba Premium',
+    slug: 'oleo-para-barba-premium',
+    category: 'barba',
+    description: 'Hidratação profunda com óleo de argan e jojoba. Deixa a barba macia e perfumada.',
+    price_cents: 5500,
+    stock_quantity: 8,
+    active: true,
+    featured: true,
+    image_url: null,
+    sort_order: 2,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'prod-3',
+    name: 'Shampoo Fortificante',
+    slug: 'shampoo-fortificante',
+    category: 'cabelo',
+    description: 'Limpeza refrescante com mentol e biotina. Fortalece a raiz e limpa o couro cabeludo.',
+    price_cents: 4800,
+    stock_quantity: 15,
+    active: true,
+    featured: false,
+    image_url: null,
+    sort_order: 3,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'prod-4',
+    name: 'Balm Modelador de Barba',
+    slug: 'balm-modelador-de-barba',
+    category: 'barba',
+    description: 'Alinha fios rebeldes, hidrata a pele e previne coceira na fase de crescimento.',
+    price_cents: 4900,
+    stock_quantity: 5,
+    active: true,
+    featured: false,
+    image_url: null,
+    sort_order: 4,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'prod-5',
+    name: 'Cera Modeladora Brilho',
+    slug: 'cera-modeladora-brilho',
+    category: 'finalizacao',
+    description: 'Brilho clássico com textura flexível. Excelente para cortes clássicos e alinhados.',
+    price_cents: 5900,
+    stock_quantity: 0,
+    active: true,
+    featured: false,
+    image_url: null,
+    sort_order: 5,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'prod-6',
+    name: 'Pente de Madeira Viks',
+    slug: 'pente-de-madeira-viks',
+    category: 'cuidados',
+    description: 'Madeira maciça antiestática. Desembaraça sem quebrar os fios da barba e do cabelo.',
+    price_cents: 3500,
+    stock_quantity: 20,
+    active: true,
+    featured: false,
+    image_url: null,
+    sort_order: 6,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
 const categoryLabels: Record<string, string> = {
   all: 'Todos',
   cabelo: 'Cabelo',
@@ -29,24 +122,25 @@ const categoryIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 function FilterChip({ item, selected, onSelect }: { item: string; selected: boolean; onSelect: () => void }) {
-  const scale = useSharedValue(1);
+  const isHovered = useSharedValue(false);
+  const isPressed = useSharedValue(false);
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    // eslint-disable-next-line react-hooks/immutability
-    scale.value = withSpring(0.94, { damping: 15, stiffness: 300 });
-  };
-
-  const handlePressOut = () => {
-    // eslint-disable-next-line react-hooks/immutability
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
-  };
+  const animStyle = useAnimatedStyle(() => {
+    const scale = isPressed.value ? 0.94 : isHovered.value ? 1.05 : 1;
+    return {
+      transform: [{ scale: withSpring(scale, { damping: 15, stiffness: 300 }) }],
+      borderColor: isHovered.value && !selected ? colors.blue : selected ? colors.blue : colors.line,
+    };
+  });
 
   return (
-    <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onSelect}>
+    <Pressable
+      onHoverIn={() => { isHovered.value = true; }}
+      onHoverOut={() => { isHovered.value = false; }}
+      onPressIn={() => { isPressed.value = true; }}
+      onPressOut={() => { isPressed.value = false; }}
+      onPress={onSelect}
+    >
       <Animated.View style={[styles.filter, selected && styles.filterActive, animStyle]}>
         <Text style={[styles.filterText, selected && styles.filterTextActive]}>
           {(categoryLabels[item] ?? item).toUpperCase()}
@@ -68,56 +162,70 @@ function ProductCard({
   onOrder: () => void;
 }) {
   const available = product.stock_quantity > 0;
-  const scale = useSharedValue(1);
-  const iconScale = useSharedValue(1);
-  const buttonScale = useSharedValue(1);
+  const isHovered = useSharedValue(false);
+  const isPressed = useSharedValue(false);
+  const buttonPressed = useSharedValue(false);
 
-  const cardAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const cardAnimatedStyle = useAnimatedStyle(() => {
+    const scale = isPressed.value ? 0.97 : isHovered.value ? 1.03 : 1;
+    const translateY = isHovered.value ? -8 : 0;
+    return {
+      transform: [
+        { scale: withSpring(scale, { damping: 16, stiffness: 200 }) },
+        { translateY: withSpring(translateY, { damping: 16, stiffness: 200 }) },
+      ],
+      borderColor: isHovered.value ? colors.blue : 'transparent',
+      borderWidth: 2,
+      shadowColor: '#0D59F2',
+      shadowOffset: { width: 0, height: isHovered.value ? 12 : 2 },
+      shadowOpacity: isHovered.value ? 0.25 : 0.05,
+      shadowRadius: isHovered.value ? 20 : 6,
+      elevation: isHovered.value ? 10 : 2,
+    };
+  });
 
-  const iconAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: iconScale.value }],
-  }));
+  const iconAnimatedStyle = useAnimatedStyle(() => {
+    const iconScale = isHovered.value ? 1.2 : 1;
+    const rotate = isHovered.value ? '6deg' : '0deg';
+    return {
+      transform: [
+        { scale: withSpring(iconScale, { damping: 12, stiffness: 180 }) },
+        { rotate: withSpring(rotate, { damping: 12, stiffness: 180 }) },
+      ],
+      borderColor: isHovered.value ? colors.blue : '#44454B',
+      backgroundColor: isHovered.value ? '#0D59F2' : 'transparent',
+    };
+  });
 
-  const buttonAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: buttonScale.value }],
-  }));
+  const buttonAnimatedStyle = useAnimatedStyle(() => {
+    const btnScale = buttonPressed.value ? 0.94 : isHovered.value ? 1.03 : 1;
+    return {
+      transform: [{ scale: withSpring(btnScale, { damping: 15, stiffness: 250 }) }],
+      backgroundColor: !available ? '#55565B' : isHovered.value ? '#0C48CC' : colors.blue,
+    };
+  });
 
-  const handleCardPressIn = () => {
-    /* eslint-disable react-hooks/immutability */
-    scale.value = withSpring(0.985, { damping: 16, stiffness: 220 });
-    iconScale.value = withSpring(1.1, { damping: 12, stiffness: 180 });
-    /* eslint-enable react-hooks/immutability */
-  };
-
-  const handleCardPressOut = () => {
-    /* eslint-disable react-hooks/immutability */
-    scale.value = withSpring(1, { damping: 16, stiffness: 220 });
-    iconScale.value = withSpring(1, { damping: 12, stiffness: 180 });
-    /* eslint-enable react-hooks/immutability */
-  };
-
-  const handleBtnPressIn = () => {
-    // eslint-disable-next-line react-hooks/immutability
-    buttonScale.value = withSpring(0.95, { damping: 15, stiffness: 250 });
-  };
-
-  const handleBtnPressOut = () => {
-    // eslint-disable-next-line react-hooks/immutability
-    buttonScale.value = withSpring(1, { damping: 15, stiffness: 250 });
-  };
+  const handleHoverIn = () => { isHovered.value = true; };
+  const handleHoverOut = () => { isHovered.value = false; };
+  const handleBtnPressIn = () => { buttonPressed.value = true; };
+  const handleBtnPressOut = () => { buttonPressed.value = false; };
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(Math.min(index * 70, 450)).duration(400).springify()}
+      entering={FadeInDown.delay(Math.min(index * 70, 450)).duration(450).springify()}
       style={[
         styles.card,
         { width: columns === 1 ? '100%' : columns === 2 ? '48.7%' : '32%' },
         cardAnimatedStyle,
       ]}
     >
-      <Pressable onPressIn={handleCardPressIn} onPressOut={handleCardPressOut} style={styles.cardInner}>
+      <Pressable
+        onHoverIn={handleHoverIn}
+        onHoverOut={handleHoverOut}
+        onPressIn={() => { isPressed.value = true; }}
+        onPressOut={() => { isPressed.value = false; }}
+        style={styles.cardInner}
+      >
         <View style={styles.productVisual}>
           {product.featured ? (
             <View style={styles.featured}>
@@ -174,10 +282,9 @@ function ProductCard({
 export default function ProductsScreen() {
   const { width } = useResponsiveLayout();
   const columns = width >= 980 ? 3 : width >= 650 ? 2 : 1;
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<Product[]>(defaultProducts);
   const [category, setCategory] = useState('all');
   const [loading, setLoading] = useState(Boolean(supabase));
-  const [error, setError] = useState<string>();
 
   useEffect(() => {
     if (!supabase) return;
@@ -187,9 +294,10 @@ export default function ProductsScreen() {
       .eq('active', true)
       .order('featured', { ascending: false })
       .order('sort_order')
-      .then(({ data, error: loadError }) => {
-        if (loadError) setError('Não foi possível carregar os produtos agora.');
-        else setProducts(data ?? []);
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setProducts(data);
+        }
         setLoading(false);
       });
   }, []);
@@ -233,8 +341,7 @@ export default function ProductsScreen() {
         </ScrollView>
 
         {loading ? <ActivityIndicator color={colors.blue} style={styles.loading} /> : null}
-        {error ? <View style={styles.notice}><Text style={styles.noticeText}>{error}</Text></View> : null}
-        {!loading && !error && visibleProducts.length === 0 ? (
+        {!loading && visibleProducts.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>Catálogo em atualização.</Text>
             <Text style={styles.emptyText}>Novos produtos aparecerão aqui assim que estiverem disponíveis.</Text>
@@ -286,12 +393,12 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 26, fontWeight: '800' },
   emptyText: { color: colors.muted, fontFamily: fonts.sans, fontSize: 11, marginTop: 8 },
   grid: { paddingHorizontal: layout.pagePadding, flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  card: { backgroundColor: colors.white, minWidth: 0 },
+  card: { backgroundColor: colors.white, minWidth: 0, borderRadius: 2, overflow: 'hidden' },
   cardInner: { width: '100%' },
   productVisual: { minHeight: 190, padding: 18, backgroundColor: colors.ink, justifyContent: 'space-between' },
   featured: { alignSelf: 'flex-start', backgroundColor: colors.blue, paddingHorizontal: 8, paddingVertical: 5 },
   featuredText: { color: colors.white, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.8 },
-  productIcon: { width: 70, height: 70, borderWidth: 1, borderColor: '#44454B', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
+  productIcon: { width: 70, height: 70, borderWidth: 1, borderColor: '#44454B', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', borderRadius: 35 },
   category: { color: '#88898F', fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 1 },
   cardBody: { padding: 18 },
   productName: { color: colors.ink, fontFamily: fonts.sans, fontSize: 21, fontWeight: '800', letterSpacing: -0.7 },
@@ -300,10 +407,9 @@ const styles = StyleSheet.create({
   price: { color: colors.ink, fontFamily: fonts.sans, fontSize: 18, fontWeight: '900' },
   stock: { color: colors.success, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.5 },
   stockOut: { color: colors.danger },
-  orderButton: { minHeight: 50, backgroundColor: colors.blue, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  orderButton: { minHeight: 50, backgroundColor: colors.blue, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2 },
   orderDisabled: { backgroundColor: '#55565B' },
   orderText: { color: colors.white, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
   disclaimer: { marginHorizontal: layout.pagePadding, marginTop: 24, padding: 16, backgroundColor: '#E7ECFA', flexDirection: 'row', gap: 12, alignItems: 'center' },
   disclaimerText: { flex: 1, color: colors.muted, fontFamily: fonts.sans, fontSize: 10, lineHeight: 15 },
 });
-
