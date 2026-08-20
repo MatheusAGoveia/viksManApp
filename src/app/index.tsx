@@ -29,23 +29,18 @@ function ServiceCardRow({
   const isPressed = useSharedValue(false);
 
   const rowAnimStyle = useAnimatedStyle(() => {
-    const translateX = isPressed.value ? 2 : isHovered.value ? 8 : 0;
-    const bg = isHovered.value ? '#F4F2EB' : 'transparent';
+    const translateX = isPressed.value ? 1 : isHovered.value ? 3 : 0;
+    const bg = isHovered.value ? '#F8F7F3' : 'transparent';
     return {
-      transform: [{ translateX: withSpring(translateX, { damping: 15, stiffness: 200 }) }],
+      transform: [{ translateX: withSpring(translateX, { damping: 20, stiffness: 220 }) }],
       backgroundColor: withTiming(bg, { duration: 150 }),
-      paddingHorizontal: isHovered.value ? 12 : 0,
     };
   });
 
   const arrowAnimStyle = useAnimatedStyle(() => {
-    const arrowX = isHovered.value ? 5 : 0;
-    const bg = isHovered.value ? colors.blue : 'transparent';
-    const border = isHovered.value ? colors.blue : colors.line;
+    const arrowX = isHovered.value ? 3 : 0;
     return {
-      transform: [{ translateX: withSpring(arrowX, { damping: 14, stiffness: 220 }) }],
-      backgroundColor: withTiming(bg, { duration: 150 }),
-      borderColor: withTiming(border, { duration: 150 }),
+      transform: [{ translateX: withSpring(arrowX, { damping: 18, stiffness: 220 }) }],
     };
   });
 

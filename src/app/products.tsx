@@ -126,9 +126,9 @@ function FilterChip({ item, selected, onSelect }: { item: string; selected: bool
   const isPressed = useSharedValue(false);
 
   const animStyle = useAnimatedStyle(() => {
-    const scale = isPressed.value ? 0.94 : isHovered.value ? 1.05 : 1;
+    const scale = isPressed.value ? 0.97 : isHovered.value ? 1.02 : 1;
     return {
-      transform: [{ scale: withSpring(scale, { damping: 15, stiffness: 300 }) }],
+      transform: [{ scale: withSpring(scale, { damping: 20, stiffness: 250 }) }],
       borderColor: isHovered.value && !selected ? colors.blue : selected ? colors.blue : colors.line,
     };
   });
@@ -167,41 +167,36 @@ function ProductCard({
   const buttonPressed = useSharedValue(false);
 
   const cardAnimatedStyle = useAnimatedStyle(() => {
-    const scale = isPressed.value ? 0.97 : isHovered.value ? 1.03 : 1;
-    const translateY = isHovered.value ? -8 : 0;
+    const scale = isPressed.value ? 0.99 : isHovered.value ? 1.008 : 1;
+    const translateY = isHovered.value ? -3 : 0;
     return {
       transform: [
-        { scale: withSpring(scale, { damping: 16, stiffness: 200 }) },
-        { translateY: withSpring(translateY, { damping: 16, stiffness: 200 }) },
+        { scale: withSpring(scale, { damping: 20, stiffness: 220 }) },
+        { translateY: withSpring(translateY, { damping: 20, stiffness: 220 }) },
       ],
-      borderColor: isHovered.value ? colors.blue : 'transparent',
-      borderWidth: 2,
-      shadowColor: '#0D59F2',
-      shadowOffset: { width: 0, height: isHovered.value ? 12 : 2 },
-      shadowOpacity: isHovered.value ? 0.25 : 0.05,
-      shadowRadius: isHovered.value ? 20 : 6,
-      elevation: isHovered.value ? 10 : 2,
+      borderColor: isHovered.value ? colors.blue : colors.line,
+      borderWidth: 1,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: isHovered.value ? 6 : 1 },
+      shadowOpacity: isHovered.value ? 0.08 : 0.03,
+      shadowRadius: isHovered.value ? 10 : 3,
+      elevation: isHovered.value ? 4 : 1,
     };
   });
 
   const iconAnimatedStyle = useAnimatedStyle(() => {
-    const iconScale = isHovered.value ? 1.2 : 1;
-    const rotate = isHovered.value ? '6deg' : '0deg';
+    const iconScale = isHovered.value ? 1.06 : 1;
     return {
-      transform: [
-        { scale: withSpring(iconScale, { damping: 12, stiffness: 180 }) },
-        { rotate: withSpring(rotate, { damping: 12, stiffness: 180 }) },
-      ],
+      transform: [{ scale: withSpring(iconScale, { damping: 18, stiffness: 200 }) }],
       borderColor: isHovered.value ? colors.blue : '#44454B',
-      backgroundColor: isHovered.value ? '#0D59F2' : 'transparent',
     };
   });
 
   const buttonAnimatedStyle = useAnimatedStyle(() => {
-    const btnScale = buttonPressed.value ? 0.94 : isHovered.value ? 1.03 : 1;
+    const btnScale = buttonPressed.value ? 0.97 : 1;
     return {
-      transform: [{ scale: withSpring(btnScale, { damping: 15, stiffness: 250 }) }],
-      backgroundColor: !available ? '#55565B' : isHovered.value ? '#0C48CC' : colors.blue,
+      transform: [{ scale: withSpring(btnScale, { damping: 20, stiffness: 250 }) }],
+      backgroundColor: !available ? '#55565B' : colors.blue,
     };
   });
 

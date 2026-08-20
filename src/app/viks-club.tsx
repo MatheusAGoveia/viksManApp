@@ -144,21 +144,21 @@ function PlanCard({ plan, index, requiresLogin, onPress }: { plan: ViksClubPlan;
   const isPressed = useSharedValue(false);
 
   const animatedStyle = useAnimatedStyle(() => {
-    const scale = isPressed.value ? 0.97 : isHovered.value ? 1.03 : 1;
-    const translateY = isHovered.value ? -6 : 0;
+    const scale = isPressed.value ? 0.99 : isHovered.value ? 1.008 : 1;
+    const translateY = isHovered.value ? -2 : 0;
     const borderColor = isHovered.value ? colors.blue : plan.featured ? colors.blue : '#D6D2C9';
     return {
       transform: [
-        { scale: withSpring(scale, { damping: 16, stiffness: 200 }) },
-        { translateY: withSpring(translateY, { damping: 16, stiffness: 200 }) },
+        { scale: withSpring(scale, { damping: 20, stiffness: 220 }) },
+        { translateY: withSpring(translateY, { damping: 20, stiffness: 220 }) },
       ],
       borderColor: withTiming(borderColor, { duration: 150 }),
       borderWidth: isHovered.value || plan.featured ? 2 : 1,
-      shadowColor: '#0D59F2',
-      shadowOffset: { width: 0, height: isHovered.value ? 10 : 2 },
-      shadowOpacity: isHovered.value ? 0.2 : 0.04,
-      shadowRadius: isHovered.value ? 16 : 4,
-      elevation: isHovered.value ? 8 : 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: isHovered.value ? 4 : 1 },
+      shadowOpacity: isHovered.value ? 0.05 : 0.02,
+      shadowRadius: isHovered.value ? 8 : 2,
+      elevation: isHovered.value ? 3 : 1,
     };
   });
 
