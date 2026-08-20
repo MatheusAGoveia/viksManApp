@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, layout } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { barbers as catalogBarbers } from '@/data/catalog';
+import { SubscriberBookingCalendar } from '@/features/viks-club/components/SubscriberBookingCalendar';
 import {
   activateSubscription,
   fetchClientSubscription,
@@ -22,7 +23,6 @@ import {
   fetchViksClubPlans,
   updateSubscriptionStatus,
 } from '@/features/viks-club/services/viks-club-service';
-import { SubscriberBookingCalendar } from '@/features/viks-club/components/SubscriberBookingCalendar';
 import type {
   LoyaltyTransaction,
   SubscriptionStatus,

@@ -489,8 +489,8 @@ export async function consumeBenefit(
       return { success: false, error: error.message };
     }
     const res = data as any;
-    return { 
-      success: Boolean(res?.success), 
+    return {
+      success: Boolean(res?.success),
       remaining: Number(res?.remaining ?? 0),
       discountCentsApplied: Number(res?.discount_cents_applied ?? 0)
     };
