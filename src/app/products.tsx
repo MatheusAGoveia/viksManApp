@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandLockup } from '@/components/brand-ui';
@@ -26,6 +27,149 @@ const categoryIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
   finalizacao: 'flash-outline',
   cuidados: 'leaf-outline',
 };
+
+function FilterChip({ item, selected, onSelect }: { item: string; selected: boolean; onSelect: () => void }) {
+  const scale = useSharedValue(1);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    // eslint-disable-next-line react-hooks/immutability
+    scale.value = withSpring(0.94, { damping: 15, stiffness: 300 });
+  };
+
+  const handlePressOut = () => {
+    // eslint-disable-next-line react-hooks/immutability
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+  };
+
+  return (
+    <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onSelect}>
+      <Animated.View style={[styles.filter, selected && styles.filterActive, animStyle]}>
+        <Text style={[styles.filterText, selected && styles.filterTextActive]}>
+          {(categoryLabels[item] ?? item).toUpperCase()}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function ProductCard({
+  product,
+  index,
+  columns,
+  onOrder,
+}: {
+  product: Product;
+  index: number;
+  columns: number;
+  onOrder: () => void;
+}) {
+  const available = product.stock_quantity > 0;
+  const scale = useSharedValue(1);
+  const iconScale = useSharedValue(1);
+  const buttonScale = useSharedValue(1);
+
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const iconAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+  }));
+
+  const buttonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const handleCardPressIn = () => {
+    /* eslint-disable react-hooks/immutability */
+    scale.value = withSpring(0.985, { damping: 16, stiffness: 220 });
+    iconScale.value = withSpring(1.1, { damping: 12, stiffness: 180 });
+    /* eslint-enable react-hooks/immutability */
+  };
+
+  const handleCardPressOut = () => {
+    /* eslint-disable react-hooks/immutability */
+    scale.value = withSpring(1, { damping: 16, stiffness: 220 });
+    iconScale.value = withSpring(1, { damping: 12, stiffness: 180 });
+    /* eslint-enable react-hooks/immutability */
+  };
+
+  const handleBtnPressIn = () => {
+    // eslint-disable-next-line react-hooks/immutability
+    buttonScale.value = withSpring(0.95, { damping: 15, stiffness: 250 });
+  };
+
+  const handleBtnPressOut = () => {
+    // eslint-disable-next-line react-hooks/immutability
+    buttonScale.value = withSpring(1, { damping: 15, stiffness: 250 });
+  };
+
+  return (
+    <Animated.View
+      entering={FadeInDown.delay(Math.min(index * 70, 450)).duration(400).springify()}
+      style={[
+        styles.card,
+        { width: columns === 1 ? '100%' : columns === 2 ? '48.7%' : '32%' },
+        cardAnimatedStyle,
+      ]}
+    >
+      <Pressable onPressIn={handleCardPressIn} onPressOut={handleCardPressOut} style={styles.cardInner}>
+        <View style={styles.productVisual}>
+          {product.featured ? (
+            <View style={styles.featured}>
+              <Text style={styles.featuredText}>DESTAQUE</Text>
+            </View>
+          ) : <View />}
+          <Animated.View style={[styles.productIcon, iconAnimatedStyle]}>
+            <Ionicons
+              name={categoryIcons[product.category] ?? 'bag-handle-outline'}
+              color={colors.white}
+              size={35}
+            />
+          </Animated.View>
+          <Text style={styles.category}>
+            {(categoryLabels[product.category] ?? product.category).toUpperCase()}
+          </Text>
+        </View>
+
+        <View style={styles.cardBody}>
+          <Text style={styles.productName}>{product.name}</Text>
+          <Text style={styles.description}>{product.description}</Text>
+          <View style={styles.priceRow}>
+            <Text style={styles.price}>{formatCurrency(product.price_cents / 100)}</Text>
+            <Text style={[styles.stock, !available && styles.stockOut]}>
+              {available ? `${product.stock_quantity} EM ESTOQUE` : 'INDISPONÍVEL'}
+            </Text>
+          </View>
+
+          <Pressable
+            disabled={!available}
+            onPressIn={handleBtnPressIn}
+            onPressOut={handleBtnPressOut}
+            onPress={onOrder}
+          >
+            <Animated.View
+              style={[
+                styles.orderButton,
+                !available && styles.orderDisabled,
+                buttonAnimatedStyle,
+              ]}
+            >
+              <Text style={styles.orderText}>
+                {available ? 'PEDIR NO WHATSAPP' : 'AVISE-ME DEPOIS'}
+              </Text>
+              <Ionicons name="logo-whatsapp" color={colors.white} size={18} />
+            </Animated.View>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 export default function ProductsScreen() {
   const { width } = useResponsiveLayout();
@@ -78,48 +222,88 @@ export default function ProductsScreen() {
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-          {categories.map((item) => {
-            const selected = category === item;
-            return <Pressable key={item} onPress={() => setCategory(item)} style={[styles.filter, selected && styles.filterActive]}><Text style={[styles.filterText, selected && styles.filterTextActive]}>{(categoryLabels[item] ?? item).toUpperCase()}</Text></Pressable>;
-          })}
+          {categories.map((item) => (
+            <FilterChip
+              key={item}
+              item={item}
+              selected={category === item}
+              onSelect={() => setCategory(item)}
+            />
+          ))}
         </ScrollView>
 
         {loading ? <ActivityIndicator color={colors.blue} style={styles.loading} /> : null}
         {error ? <View style={styles.notice}><Text style={styles.noticeText}>{error}</Text></View> : null}
-        {!loading && !error && visibleProducts.length === 0 ? <View style={styles.empty}><Text style={styles.emptyTitle}>Catálogo em atualização.</Text><Text style={styles.emptyText}>Novos produtos aparecerão aqui assim que estiverem disponíveis.</Text></View> : null}
+        {!loading && !error && visibleProducts.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>Catálogo em atualização.</Text>
+            <Text style={styles.emptyText}>Novos produtos aparecerão aqui assim que estiverem disponíveis.</Text>
+          </View>
+        ) : null}
 
         <View style={styles.grid}>
-          {visibleProducts.map((product) => {
-            const available = product.stock_quantity > 0;
-            return (
-              <View key={product.id} style={[styles.card, { width: columns === 1 ? '100%' : columns === 2 ? '48.7%' : '32%' }]}>
-                <View style={styles.productVisual}>
-                  {product.featured ? <View style={styles.featured}><Text style={styles.featuredText}>DESTAQUE</Text></View> : null}
-                  <View style={styles.productIcon}><Ionicons name={categoryIcons[product.category] ?? 'bag-handle-outline'} color={colors.white} size={35} /></View>
-                  <Text style={styles.category}>{(categoryLabels[product.category] ?? product.category).toUpperCase()}</Text>
-                </View>
-                <View style={styles.cardBody}>
-                  <Text style={styles.productName}>{product.name}</Text>
-                  <Text style={styles.description}>{product.description}</Text>
-                  <View style={styles.priceRow}><Text style={styles.price}>{formatCurrency(product.price_cents / 100)}</Text><Text style={[styles.stock, !available && styles.stockOut]}>{available ? `${product.stock_quantity} EM ESTOQUE` : 'INDISPONÍVEL'}</Text></View>
-                  <Pressable disabled={!available} onPress={() => orderProduct(product)} style={[styles.orderButton, !available && styles.orderDisabled]}><Text style={styles.orderText}>{available ? 'PEDIR NO WHATSAPP' : 'AVISE-ME DEPOIS'}</Text><Ionicons name="logo-whatsapp" color={colors.white} size={18} /></Pressable>
-                </View>
-              </View>
-            );
-          })}
+          {visibleProducts.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              index={index}
+              columns={columns}
+              onOrder={() => orderProduct(product)}
+            />
+          ))}
         </View>
 
-        <View style={styles.disclaimer}><Ionicons name="information-circle-outline" color={colors.blue} size={20} /><Text style={styles.disclaimerText}>O pedido é confirmado pela equipe. Pagamento e retirada acontecem na unidade; o estoque exibido pode mudar durante o atendimento.</Text></View>
+        <View style={styles.disclaimer}>
+          <Ionicons name="information-circle-outline" color={colors.blue} size={20} />
+          <Text style={styles.disclaimerText}>
+            O pedido é confirmado pela equipe. Pagamento e retirada acontecem na unidade; o estoque exibido pode mudar durante o atendimento.
+          </Text>
+        </View>
       </SafeAreaView>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper }, centered: { alignItems: 'center' }, page: { width: '100%', maxWidth: layout.maxWidth, paddingBottom: 50 },
-  header: { backgroundColor: colors.ink, paddingHorizontal: layout.pagePadding, paddingBottom: 44 }, topbar: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, unit: { color: '#8F9096', fontFamily: fonts.mono, fontSize: 8, fontWeight: '900', letterSpacing: 1 }, eyebrow: { color: colors.blue, fontFamily: fonts.mono, fontSize: 9, fontWeight: '900', letterSpacing: 1.6, marginTop: 30 }, title: { color: colors.white, fontFamily: fonts.sans, fontSize: 49, lineHeight: 46, fontWeight: '800', letterSpacing: -3, marginTop: 14 }, subtitle: { color: '#A6A7AC', fontFamily: fonts.sans, fontSize: 13, lineHeight: 20, maxWidth: 480, marginTop: 17 },
-  filters: { paddingHorizontal: layout.pagePadding, paddingVertical: 22, gap: 8 }, filter: { minHeight: 44, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, justifyContent: 'center' }, filterActive: { backgroundColor: colors.blue, borderColor: colors.blue }, filterText: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '900', letterSpacing: 0.9 }, filterTextActive: { color: colors.white },
-  loading: { paddingVertical: 70 }, notice: { marginHorizontal: layout.pagePadding, padding: 16, backgroundColor: '#FBE8E6', borderLeftWidth: 4, borderLeftColor: colors.danger }, noticeText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 11, fontWeight: '700' }, empty: { marginHorizontal: layout.pagePadding, paddingVertical: 70, alignItems: 'center' }, emptyTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 26, fontWeight: '800' }, emptyText: { color: colors.muted, fontFamily: fonts.sans, fontSize: 11, marginTop: 8 },
-  grid: { paddingHorizontal: layout.pagePadding, flexDirection: 'row', flexWrap: 'wrap', gap: 14 }, card: { backgroundColor: colors.white, minWidth: 0 }, productVisual: { minHeight: 190, padding: 18, backgroundColor: colors.ink, justifyContent: 'space-between' }, featured: { alignSelf: 'flex-start', backgroundColor: colors.blue, paddingHorizontal: 8, paddingVertical: 5 }, featuredText: { color: colors.white, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.8 }, productIcon: { width: 70, height: 70, borderWidth: 1, borderColor: '#44454B', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }, category: { color: '#88898F', fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 1 }, cardBody: { padding: 18 }, productName: { color: colors.ink, fontFamily: fonts.sans, fontSize: 21, fontWeight: '800', letterSpacing: -0.7 }, description: { color: colors.muted, fontFamily: fonts.sans, fontSize: 10, lineHeight: 15, minHeight: 46, marginTop: 7 }, priceRow: { minHeight: 58, borderTopWidth: 1, borderColor: colors.line, marginTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, price: { color: colors.ink, fontFamily: fonts.sans, fontSize: 18, fontWeight: '900' }, stock: { color: colors.success, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.5 }, stockOut: { color: colors.danger }, orderButton: { minHeight: 50, backgroundColor: colors.blue, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, orderDisabled: { backgroundColor: '#55565B' }, orderText: { color: colors.white, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
-  disclaimer: { marginHorizontal: layout.pagePadding, marginTop: 24, padding: 16, backgroundColor: '#E7ECFA', flexDirection: 'row', gap: 12, alignItems: 'center' }, disclaimerText: { flex: 1, color: colors.muted, fontFamily: fonts.sans, fontSize: 10, lineHeight: 15 },
+  screen: { flex: 1, backgroundColor: colors.paper },
+  centered: { alignItems: 'center' },
+  page: { width: '100%', maxWidth: layout.maxWidth, paddingBottom: 50 },
+  header: { backgroundColor: colors.ink, paddingHorizontal: layout.pagePadding, paddingBottom: 44 },
+  topbar: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  unit: { color: '#8F9096', fontFamily: fonts.mono, fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  eyebrow: { color: colors.blue, fontFamily: fonts.mono, fontSize: 9, fontWeight: '900', letterSpacing: 1.6, marginTop: 30 },
+  title: { color: colors.white, fontFamily: fonts.sans, fontSize: 49, lineHeight: 46, fontWeight: '800', letterSpacing: -3, marginTop: 14 },
+  subtitle: { color: '#A6A7AC', fontFamily: fonts.sans, fontSize: 13, lineHeight: 20, maxWidth: 480, marginTop: 17 },
+  filters: { paddingHorizontal: layout.pagePadding, paddingVertical: 22, gap: 8 },
+  filter: { minHeight: 44, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, justifyContent: 'center' },
+  filterActive: { backgroundColor: colors.blue, borderColor: colors.blue },
+  filterText: { color: colors.muted, fontFamily: fonts.mono, fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
+  filterTextActive: { color: colors.white },
+  loading: { paddingVertical: 70 },
+  notice: { marginHorizontal: layout.pagePadding, padding: 16, backgroundColor: '#FBE8E6', borderLeftWidth: 4, borderLeftColor: colors.danger },
+  noticeText: { color: colors.ink, fontFamily: fonts.sans, fontSize: 11, fontWeight: '700' },
+  empty: { marginHorizontal: layout.pagePadding, paddingVertical: 70, alignItems: 'center' },
+  emptyTitle: { color: colors.ink, fontFamily: fonts.sans, fontSize: 26, fontWeight: '800' },
+  emptyText: { color: colors.muted, fontFamily: fonts.sans, fontSize: 11, marginTop: 8 },
+  grid: { paddingHorizontal: layout.pagePadding, flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  card: { backgroundColor: colors.white, minWidth: 0 },
+  cardInner: { width: '100%' },
+  productVisual: { minHeight: 190, padding: 18, backgroundColor: colors.ink, justifyContent: 'space-between' },
+  featured: { alignSelf: 'flex-start', backgroundColor: colors.blue, paddingHorizontal: 8, paddingVertical: 5 },
+  featuredText: { color: colors.white, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.8 },
+  productIcon: { width: 70, height: 70, borderWidth: 1, borderColor: '#44454B', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
+  category: { color: '#88898F', fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 1 },
+  cardBody: { padding: 18 },
+  productName: { color: colors.ink, fontFamily: fonts.sans, fontSize: 21, fontWeight: '800', letterSpacing: -0.7 },
+  description: { color: colors.muted, fontFamily: fonts.sans, fontSize: 10, lineHeight: 15, minHeight: 46, marginTop: 7 },
+  priceRow: { minHeight: 58, borderTopWidth: 1, borderColor: colors.line, marginTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  price: { color: colors.ink, fontFamily: fonts.sans, fontSize: 18, fontWeight: '900' },
+  stock: { color: colors.success, fontFamily: fonts.mono, fontSize: 7, fontWeight: '900', letterSpacing: 0.5 },
+  stockOut: { color: colors.danger },
+  orderButton: { minHeight: 50, backgroundColor: colors.blue, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  orderDisabled: { backgroundColor: '#55565B' },
+  orderText: { color: colors.white, fontFamily: fonts.sans, fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
+  disclaimer: { marginHorizontal: layout.pagePadding, marginTop: 24, padding: 16, backgroundColor: '#E7ECFA', flexDirection: 'row', gap: 12, alignItems: 'center' },
+  disclaimerText: { flex: 1, color: colors.muted, fontFamily: fonts.sans, fontSize: 10, lineHeight: 15 },
 });
+
